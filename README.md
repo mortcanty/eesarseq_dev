@@ -1,3 +1,3 @@
-# Detecting Changes in Sentinel-1 Imagery (Part 4)
+# Detecting Changes in Sentinel-1 Imagery
 
 Author: mortcanty
