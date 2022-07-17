@@ -3,7 +3,8 @@
 
 import ee
 ee.Initialize
-import time, math
+import time, csv
+from tqdm.notebook import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import norm, gamma, f, chi2
@@ -65,14 +66,14 @@ def handle_draw(self, action, geo_json):
         point = None
 
 def get_timestamp_list(collection):
-    ''' make timestamps in YYYYMMDD format '''   
+    ''' make timestamps from image collection in YYYYMMDD format '''   
     acquisition_times = ee.List(collection.aggregate_array('system:time_start')).getInfo()
     tsl = []
     for timestamp in acquisition_times:
         tmp = time.gmtime(int(timestamp)/1000)
         tsl.append(time.strftime('%x', tmp))        
     tsl= [x.replace('/','') for x in tsl]  
-    tsl = ['T20'+x[4:]+x[0:4] for x in tsl]         
+    tsl = ['20'+x[4:]+x[0:4] for x in tsl]         
     return tsl
 
 def viewS2cell(imgcoll, poly):         
@@ -87,14 +88,11 @@ def viewS2cell(imgcoll, poly):
     with w_out:
         try:          
             collection = ee.ImageCollection(imgcoll) \
-                     .filterDate(ee.Date(w_startdate.value), ee.Date(w_enddate.value)) \
-                     .filterBounds(poly) \
-                     .filter(ee.Filter.contains(rightValue=poly,leftField='.geo'))                     
+                           .filterDate(ee.Date(w_startdate.value), ee.Date(w_enddate.value)) 
             tsl = get_timestamp_list(collection)
             bmap = collection.toBands() \
-                    .clip(poly) \
-                    .updateMask(watermask)      
-                     
+                             .clip(poly) \
+                             .updateMask(watermask)                        
             bmap = bmap.mask(bmap.mask().And(maskDynamicWorld(dyn)))                     
                      
             k = bmap.bandNames().length().getInfo()                 
@@ -114,7 +112,7 @@ def viewS2cell(imgcoll, poly):
                     if i % 4 != 0:
                         labels[i] = ''
             plt.xticks(ticks,labels,rotation=90)
-            plt.ylim([0,0.2])
+            plt.ylim([0,0.4])
             plt.legend()
             plt.show()
     #            print('Saved to ~/%s'%fn)
@@ -148,7 +146,7 @@ w_startdate = widgets.Text(
 )
 w_enddate = widgets.Text(
     layout = widgets.Layout(width='200px'),
-    value='2020-01-01',
+    value='2018-04-01',
     placeholder=' ',
     description='EndDate:',
     disabled=False
@@ -193,15 +191,52 @@ def on_reset_button_clicked(b):
 w_reset.on_click(on_reset_button_clicked)        
 
 def on_scan_button_clicked(b):
+        
     with w_out:
         try:
             clear_layers()
             w_out.clear_output()
             print('Scanning ...')
+            # get the collection of bitemporal change images
+            # filter, recast to a single image, rename bands with start times
+            # and update masks
+            collection = ee.ImageCollection('users/djq/demo') \
+                           .filterDate(ee.Date(w_startdate.value), ee.Date(w_enddate.value))
+            tsl = get_timestamp_list(collection)   
+            bmap = collection.toBands().updateMask(watermask)                        
+            bmap = bmap.mask(bmap.mask().And(maskDynamicWorld(dyn)))  
+            bmap = bmap.rename(tsl)            
+            # get the S2 cells within the Houston AOI        
             s2cells = ee.FeatureCollection('users/djq/bbox_s2_l14') \
-                       .filterBounds(poly_houston) \
-                       .filter(ee.Filter.isContained(rightValue=poly_houston,leftField='.geo'))
+                     .filter(ee.Filter.isContained(rightValue=poly_houston,leftField='.geo'))
             print('Number of s2 cells contained in AOI: %s'%s2cells.size().getInfo())
+            # recast to a list of cells and iterate over them to create csv
+            cells = s2cells.toList(50000).getInfo()           
+            with open('s2cell_features.csv', mode='w') as csv_file:
+                writer = csv.writer(csv_file, delimiter=',')
+                fields = ['s2cell id', 'total image pixel count']
+                for item in tsl:
+                    fields.append(item)            
+                writer.writerow(fields)
+                for cell in tqdm(cells[:100]):    
+                    cell_id = cell['id']       
+                    cell_coords = cell['geometry']['coordinates']
+                    poly = ee.Geometry.Polygon(cell_coords)      
+                    pixels_in_cell = bmap.unmask().select(0) \
+                                         .clip(poly) \
+                                         .reduceRegion(ee.Reducer.count(),scale=10,maxPixels=10e10) \
+                                         .getInfo()[tsl[0]]        
+                    changes_per_period = bmap.multiply(0) \
+                                             .where(bmap.gte(1),1) \
+                                             .clip(poly) \
+                                             .reduceRegion(ee.Reducer.sum(),scale=10,maxPixels=10e10) \
+                                             .getInfo() 
+                    cpp= list(changes_per_period.values())   
+                    row = [cell_id, pixels_in_cell]
+                    for item in cpp:
+                        row.append(int(item))                                                     
+                    writer.writerow(row)
+            print('done')               
         except Exception as e:
             print('Error: %s'%e)
 
