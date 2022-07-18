@@ -1,12 +1,12 @@
-# forest.py
-# widget interface for SAR forest mapping with omnibus change detection
+# s2cell.py
+# widget interface for scanning s2geometry cells
 
 import ee
 ee.Initialize
 import time, csv
 from tqdm.notebook import tqdm
 import matplotlib.pyplot as plt
-import numpy as np
+from operator import add
 from scipy.stats import norm, gamma, f, chi2
 import ipywidgets as widgets
 from IPython.display import display
@@ -99,9 +99,15 @@ def viewS2cell(imgcoll, poly):
             plots = ee.List(ee.List([1,2,3]).iterate(plot_iter,ee.List([]))).getInfo()           
             x = range(1,k+1)  
             _ = plt.figure(figsize=(10,4),)
-            plt.plot(x,list(plots[0].values()),'ro-',label='posdef')
-            plt.plot(x,list(plots[1].values()),'co-',label='negdef')
-            plt.plot(x,list(plots[2].values()),'yo-',label='indef')        
+            posdef = list(plots[0].values())
+            negdef = list(plots[1].values())
+            indef = list(plots[2].values())
+            alldef = list(map(add,posdef,negdef))
+            alldef = list(map(add,alldef,indef))
+            plt.plot(x,posdef,'r-',label='posdef')
+            plt.plot(x,negdef,'c-',label='negdef')
+            plt.plot(x,indef,'y-',label='indef') 
+            plt.plot(x,alldef,'k-',label='all')        
             ticks = range(0,k+2)
             labels = [str(i) for i in range(0,k+2)]        
             labels[0] = ' '
@@ -112,7 +118,7 @@ def viewS2cell(imgcoll, poly):
                     if i % 4 != 0:
                         labels[i] = ''
             plt.xticks(ticks,labels,rotation=90)
-            plt.ylim([0,0.4])
+            plt.ylim([0,w_yaxis.value])
             plt.legend()
             plt.show()
     #            print('Saved to ~/%s'%fn)
@@ -146,12 +152,20 @@ w_startdate = widgets.Text(
 )
 w_enddate = widgets.Text(
     layout = widgets.Layout(width='200px'),
-    value='2018-04-01',
+    value='2019-01-01',
     placeholder=' ',
     description='EndDate:',
     disabled=False
 )
-
+w_yaxis = widgets.BoundedFloatText(
+    layout = widgets.Layout(width='200px'),
+    value='0.2',
+    min=0.1,
+    max=0.8,
+    step=0.1,
+    description='y-axis:',
+    disabled=False
+)
 w_out = widgets.Output(
     layout=widgets.Layout(width='700px',border='1px solid black')
 )
@@ -160,8 +174,8 @@ w_goto = widgets.Button(description='GoTo',disabled=False)
 w_reset = widgets.Button(description='Reset',disabled=False)
 w_scan = widgets.Button(description='Scan All',disabled=False)
 w_dates = widgets.HBox([w_startdate,w_enddate])    
-row1 = widgets.HBox([w_dates,w_reset,w_goto,w_location])
-row2 = widgets.HBox([w_out,w_scan])
+row1 = widgets.HBox([w_dates,w_reset,w_scan])
+row2 = widgets.HBox([w_out,w_yaxis])
 box = widgets.VBox([row1,row2])
 
 def clear_layers():
@@ -211,7 +225,7 @@ def on_scan_button_clicked(b):
                      .filter(ee.Filter.isContained(rightValue=poly_houston,leftField='.geo'))
             print('Number of s2 cells contained in AOI: %s'%s2cells.size().getInfo())
             # recast to a list of cells and iterate over them to create csv
-            cells = s2cells.toList(50000).getInfo()           
+            cells = s2cells.toList(50000).slice(10000,10100).getInfo()           
             with open('s2cell_features.csv', mode='w') as csv_file:
                 writer = csv.writer(csv_file, delimiter=',')
                 fields = ['s2cell id', 'total image pixel count']
@@ -231,7 +245,7 @@ def on_scan_button_clicked(b):
                                              .clip(poly) \
                                              .reduceRegion(ee.Reducer.sum(),scale=10,maxPixels=10e10) \
                                              .getInfo() 
-                    cpp= list(changes_per_period.values())   
+                    cpp = list(changes_per_period.values())   
                     row = [cell_id, pixels_in_cell]
                     for item in cpp:
                         row.append(int(item))                                                     
@@ -273,7 +287,7 @@ def run():
  
     m = Map(center=center, 
                     zoom=11, 
-                    layout={'height':'500px','width':'800px'},
+                    layout={'height':'500px','width':'900px'},
                     layers=(ewi,ews,osm),
                     controls=(dc,lc,mc,fs))
     with w_out:
