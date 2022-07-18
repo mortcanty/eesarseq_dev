@@ -14,6 +14,7 @@ from ipyleaflet import (Map,DrawControl,TileLayer,
                         MeasureControl,
                         FullScreenControl,
                         Polygon,
+                        Popup,
                         basemaps,basemap_to_tiles,
                         LayersControl)
 from geopy.geocoders import Nominatim
@@ -49,9 +50,12 @@ def handle_draw(self, action, geo_json):
             point = ee.Geometry.Point(coords)
             s2cell = ee.FeatureCollection('users/djq/bbox_s2_l14') \
                        .filterBounds(poly_houston) \
-                       .filter(ee.Filter.contains(rightValue=point,leftField='.geo')) \
-                       .geometry()
-            coordinates =  s2cell.geometries().getInfo()[0]['coordinates']            
+                       .filter(ee.Filter.contains(rightValue=point,leftField='.geo')) 
+                       
+            cellid = s2cell.first().getInfo()['id']            
+            cellcoords = (point.getInfo())['coordinates']
+                       
+            coordinates =  s2cell.geometry().geometries().getInfo()[0]['coordinates']            
             poly = ee.Geometry.Polygon(coordinates)            
             viewS2cell('users/djq/demo', poly)           
             name = 's2cell'+str(len(m.layers)-3)
@@ -61,6 +65,13 @@ def handle_draw(self, action, geo_json):
                         color="white", 
                         fill_color = 'black', 
                         name = name)   
+            
+            cellid = s2cell.first().getInfo()['id']            
+            cellcoords = (point.getInfo())['coordinates'][::-1]
+            message = widgets.HTML()
+            message.value = 's2cell: '+ cellid[-4:]
+            popup = Popup(location = cellcoords, child = message)
+            m.add_layer(popup)
             m.add_layer(layer)
     elif action == 'deleted':
         point = None
@@ -86,14 +97,14 @@ def viewS2cell(imgcoll, poly):
                   .reduceRegion(ee.Reducer.mean(),scale=10,maxPixels=10e10)
         return ee.List(plots.add(res))
     with w_out:
-        try:          
+        try:                
             collection = ee.ImageCollection(imgcoll) \
                            .filterDate(ee.Date(w_startdate.value), ee.Date(w_enddate.value)) 
             tsl = get_timestamp_list(collection)
             bmap = collection.toBands() \
                              .clip(poly) \
                              .updateMask(watermask)                        
-            bmap = bmap.mask(bmap.mask().And(maskDynamicWorld(dyn)))                     
+            bmap = bmap.mask(bmap.mask().And(maskDynamicWorld(dyn)))          
                      
             k = bmap.bandNames().length().getInfo()                 
             plots = ee.List(ee.List([1,2,3]).iterate(plot_iter,ee.List([]))).getInfo()           
@@ -102,12 +113,12 @@ def viewS2cell(imgcoll, poly):
             posdef = list(plots[0].values())
             negdef = list(plots[1].values())
             indef = list(plots[2].values())
-            alldef = list(map(add,posdef,negdef))
-            alldef = list(map(add,alldef,indef))
-            plt.plot(x,posdef,'r-',label='posdef')
-            plt.plot(x,negdef,'c-',label='negdef')
-            plt.plot(x,indef,'y-',label='indef') 
-            plt.plot(x,alldef,'k-',label='all')        
+#            alldef = list(map(add,posdef,negdef))
+#            alldef = list(map(add,alldef,indef))
+            plt.plot(x,posdef,'ro-',label='posdef')
+            plt.plot(x,negdef,'co-',label='negdef')
+            plt.plot(x,indef,'yo-',label='indef') 
+#            plt.plot(x,alldef,'k-',label='all')        
             ticks = range(0,k+2)
             labels = [str(i) for i in range(0,k+2)]        
             labels[0] = ' '
