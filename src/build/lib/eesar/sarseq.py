@@ -364,7 +364,8 @@ def export_as_image_collection(result, assetpath, acquisition_times, poly):
         size = bmap.bandNames().size()
         images = ee.List.sequence(0, size.add(-1))
         tagged_images = ee.List(images.map(tag_images))
-        for i in range(size.getInfo()-1):
+        tagged_images = tagged_images
+        for i in range(size.getInfo()):
             assetId = assetpath+'/bmap'+str(i)
             assexport = ee.batch.Export.image.toAsset(ee.Image(tagged_images.get(i)).clip(poly),
                                  description='assetExportTask', 
@@ -412,16 +413,16 @@ def main():
 
    
 #  Houston AOI
-#     coords = [[[-96.06878489327627, 29.823701939611126],
-#                [-96.06878489327627, 29.1423007492751],
-#                [-95.00860422921377, 29.1423007492751],
-#                [-95.00860422921377, 29.823701939611126]]]
+    coords = [[[-96.06878489327627, 29.823701939611126],
+               [-96.06878489327627, 29.1423007492751],
+               [-95.00860422921377, 29.1423007492751],
+               [-95.00860422921377, 29.823701939611126]]]
 #  Juelich AOI    
-    coords = [[[6.348381042480468, 50.88527552329112],
-               [6.479530334472656, 50.88527552329112],
-               [6.479530334472656, 50.94696387166774],
-               [6.348381042480468, 50.94696387166774],
-               [6.348381042480468, 50.88527552329112]]]
+#     coords = [[[6.348381042480468, 50.88527552329112],
+#                [6.479530334472656, 50.88527552329112],
+#                [6.479530334472656, 50.94696387166774],
+#                [6.348381042480468, 50.94696387166774],
+#                [6.348381042480468, 50.88527552329112]]]
     t1, t2 =  ['2018-01-01','2019-01-01']
     alpha = 0.01
     platform = 'A'
@@ -442,7 +443,8 @@ def main():
         elif option == '-d':
             as_collection = True
                    
-    assetpath = 'projects/sentinel-change-detection/assets/test/' + args[0] 
+#    assetpath = 'projects/sentinel-change-detection/assets/test/' + args[0] 
+    assetpath = args[0]
     
     poly = ee.Geometry.Polygon(coords)
        

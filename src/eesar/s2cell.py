@@ -57,7 +57,8 @@ def handle_draw(self, action, geo_json):
                        
             coordinates =  s2cell.geometry().geometries().getInfo()[0]['coordinates']            
             poly = ee.Geometry.Polygon(coordinates)            
-            viewS2cell('users/djq/demo', poly)           
+            k, fmap = viewS2cell('users/djq/demo', poly)
+            fmap = fmap.updateMask(fmap.gt(0))           
             name = 's2cell'+str(len(m.layers)-3)
             
             locations = [tuple(list(reversed(i))) for i in coordinates[0]]      
@@ -73,6 +74,12 @@ def handle_draw(self, action, geo_json):
             popup = Popup(location = cellcoords, child = message)
             m.add_layer(popup)
             m.add_layer(layer)
+            
+            m.add_layer(TileLayer(url=GetTileLayerUrl(fmap.visualize(min=0, max=k/2, 
+                                                                     palette='black,blue,cyan,yellow,red')),
+                                                                     name='fmap'+cellid[-4:]))           
+
+            
     elif action == 'deleted':
         point = None
 
@@ -108,7 +115,9 @@ def viewS2cell(imgcoll, poly):
             bmap = collection.toBands() \
                              .clip(poly) \
                              .updateMask(watermask)                        
-            bmap = bmap.mask(bmap.mask().And(maskDynamicWorld(dyn)))          
+            bmap = bmap.mask(bmap.mask().And(maskDynamicWorld(dyn)))   
+            
+            fmap = bmap.multiply(0).where(bmap.gte(1),1).reduce(ee.Reducer.sum())      
                      
             k = bmap.bandNames().length().getInfo()                 
             plots = ee.List(ee.List([1,2,3]).iterate(plot_iter,ee.List([]))).getInfo()           
@@ -136,7 +145,7 @@ def viewS2cell(imgcoll, poly):
             plt.ylim([0,w_yaxis.value])
             plt.legend()
             plt.show()
-    #            print('Saved to ~/%s'%fn)
+            return k, fmap
         except Exception as e:
             print('Error: %s'%e)   
             
@@ -194,6 +203,14 @@ row2 = widgets.HBox([w_out,w_yaxis])
 box = widgets.VBox([row1,row2])
 
 def clear_layers():
+    if len(m.layers)>13:
+        m.remove_layer(m.layers[13])    
+    if len(m.layers)>12:
+        m.remove_layer(m.layers[12])
+    if len(m.layers)>11:
+        m.remove_layer(m.layers[11])
+    if len(m.layers)>10:
+        m.remove_layer(m.layers[10])
     if len(m.layers)>9:
         m.remove_layer(m.layers[9])    
     if len(m.layers)>8:
@@ -240,6 +257,7 @@ def on_scan_button_clicked(b):
                      .filter(ee.Filter.isContained(rightValue=poly_houston,leftField='.geo'))
             print('Number of s2 cells contained in AOI: %s'%s2cells.size().getInfo())
             # recast to a list of cells and iterate over them to create csv
+            # cells = s2cells.toList(50000).getInfo()
             cells = s2cells.toList(50000).slice(10000,10100).getInfo()           
             with open('s2cell_features.csv', mode='w') as csv_file:
                 writer = csv.writer(csv_file, delimiter=',')
