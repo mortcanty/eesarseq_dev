@@ -3,7 +3,7 @@
 
 import ee
 ee.Initialize
-import time, csv
+import time, csv, numbers
 from tqdm.notebook import tqdm
 import matplotlib.pyplot as plt
 from operator import add
@@ -96,6 +96,10 @@ def viewS2cell(imgcoll, poly):
                   .where(bmap.eq(current),1) \
                   .reduceRegion(ee.Reducer.mean(),scale=10,maxPixels=10e10)
         return ee.List(plots.add(res))
+    def mapped(x):
+        if isinstance(x,numbers.Number):
+            return x
+        return 0
     with w_out:
         try:                
             collection = ee.ImageCollection(imgcoll) \
@@ -110,15 +114,15 @@ def viewS2cell(imgcoll, poly):
             plots = ee.List(ee.List([1,2,3]).iterate(plot_iter,ee.List([]))).getInfo()           
             x = range(1,k+1)  
             _ = plt.figure(figsize=(10,4),)
-            posdef = list(plots[0].values())
-            negdef = list(plots[1].values())
-            indef = list(plots[2].values())
-#            alldef = list(map(add,posdef,negdef))
-#            alldef = list(map(add,alldef,indef))
-            plt.plot(x,posdef,'ro-',label='posdef')
-            plt.plot(x,negdef,'co-',label='negdef')
-            plt.plot(x,indef,'yo-',label='indef') 
-#            plt.plot(x,alldef,'k-',label='all')        
+            posdef = list(map(mapped, plots[0].values()))
+            negdef = list(map(mapped, plots[1].values()))
+            indef = list(map(mapped, plots[2].values()))           
+            alldef = list(map(add,posdef,negdef))
+            alldef = list(map(add,alldef,indef))
+            plt.plot(x,posdef,'r-',label='posdef')
+            plt.plot(x,negdef,'c-',label='negdef')
+            plt.plot(x,indef,'y-',label='indef') 
+            plt.plot(x,alldef,'ko-',label='all')        
             ticks = range(0,k+2)
             labels = [str(i) for i in range(0,k+2)]        
             labels[0] = ' '
