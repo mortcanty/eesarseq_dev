@@ -581,7 +581,7 @@ def on_collect_button_clicked(b):
             w_export_ass.disabled = False
             w_export_drv.disabled = False
             #Display preview 
-            if len(rons)==1:
+            if len(rons) == 2:
                 print( 'please wait for raster overlay ...' )
                 clear_layers()
                 m.add_layer(TileLayer(url=GetTileLayerUrl(S1.visualize(min=-15, max=4)),name='S1'))   

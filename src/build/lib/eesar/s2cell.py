@@ -25,7 +25,12 @@ dyn = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1') \
 watermask = dyn.gt(ee.Image.constant(0)) 
 
 def maskDynamicWorld(image): 
-    return image.eq(ee.Image.constant(6)) # Built 
+    classes = {'built': 6, 'trees': 1, 'grass': 2, 'crops': 4, 'bare': 7, 'scrub': 5}
+    include = [classes[v] for v in w_include.value]
+    result = ee.Image.constant(0)
+    for i in include:
+        result = result.Or(image.eq(ee.Image.constant(i)))     
+    return result
 
 #  Houston AOI
 coords = [[[-96.06878489327627, 29.823701939611126],
@@ -37,7 +42,6 @@ poly_houston = ee.Geometry.Polygon(coords)
 geolocator = Nominatim(timeout=10,user_agent='s2cell.ipynb')
         
 watermask = ee.Image('UMD/hansen/global_forest_change_2015').select('datamask').eq(1)
-settlement = ee.Image("DLR/WSF/WSF2015/v1")
 
 def GetTileLayerUrl(image):
     map_id = ee.Image(image).getMapId()
@@ -46,7 +50,7 @@ def GetTileLayerUrl(image):
 def handle_draw(self, action, geo_json):
     coords =  geo_json['geometry']['coordinates']  
     if action == 'created':
-        with w_out:
+        with w_out:         
             point = ee.Geometry.Point(coords)
             s2cell = ee.FeatureCollection('users/djq/bbox_s2_l14') \
                        .filterBounds(poly_houston) \
@@ -71,7 +75,7 @@ def handle_draw(self, action, geo_json):
             cellcoords = (point.getInfo())['coordinates'][::-1]
             message = widgets.HTML()
             message.value = 's2cell: '+ cellid[-4:]
-            popup = Popup(location = cellcoords, child = message)
+            popup = Popup(location = cellcoords, child = message, name = 'cellid')
             m.add_layer(popup)
             m.add_layer(layer)
             
@@ -190,6 +194,13 @@ w_yaxis = widgets.BoundedFloatText(
     description='y-axis:',
     disabled=False
 )
+w_include = widgets.SelectMultiple(
+    layout = widgets.Layout(height='120px'),
+    options=['built','trees','grass','bare','scrub','crops'],
+    value=['built'],
+    description='Include class',
+    disabled=False
+)
 w_out = widgets.Output(
     layout=widgets.Layout(width='700px',border='1px solid black')
 )
@@ -198,26 +209,16 @@ w_goto = widgets.Button(description='GoTo',disabled=False)
 w_reset = widgets.Button(description='Reset',disabled=False)
 w_scan = widgets.Button(description='Scan All',disabled=False)
 w_dates = widgets.HBox([w_startdate,w_enddate])    
+w_auxil = widgets.VBox([w_include,w_yaxis])
 row1 = widgets.HBox([w_dates,w_reset,w_scan])
-row2 = widgets.HBox([w_out,w_yaxis])
+row2 = widgets.HBox([w_out,w_auxil])
 box = widgets.VBox([row1,row2])
 
 def clear_layers():
-    if len(m.layers)>9:
-        m.remove_layer(m.layers[9])    
-    if len(m.layers)>8:
-        m.remove_layer(m.layers[8])
-    if len(m.layers)>7:
-        m.remove_layer(m.layers[7])
-    if len(m.layers)>6:
-        m.remove_layer(m.layers[6])
-    if len(m.layers)>5:
-        m.remove_layer(m.layers[5])
-    if len(m.layers)>4:
-        m.remove_layer(m.layers[4])   
-    if len(m.layers)>3:
-        m.remove_layer(m.layers[3])   
-
+    for i in range(20,3,-1): 
+        if len(m.layers)>i:
+            m.remove_layer(m.layers[i])    
+    
 def on_reset_button_clicked(b):
     try:
         clear_layers()
@@ -312,9 +313,13 @@ def run():
  
     m = Map(center=center, 
                     zoom=11, 
+                    scroll_wheel_zoom=True,
                     layout={'height':'500px','width':'900px'},
                     layers=(ewi,ews,osm),
                     controls=(dc,lc,mc,fs))
+    palette = ['419BDF','397D49','88B053','7A87C6','E49635','DFC35A','C4281B','A59B8F','B39FE1']
+    m.add_layer( TileLayer(url=GetTileLayerUrl(dyn.visualize(min=0,max=8,
+                                  palette=palette)),name= 'Dynamic World') )
     with w_out:
         w_out.clear_output()
         
