@@ -105,7 +105,9 @@ def viewS2cell(imgcoll, poly):
         plots = ee.List(prev) 
         res = bmap.multiply(0) \
                   .where(bmap.eq(current),1) \
-                  .reduceRegion(ee.Reducer.mean(),scale=10,maxPixels=10e10)
+                  .divide(ee.Image.constant(pixels_in_cell)) \
+                  .reduceRegion(ee.Reducer.sum(),scale=10,maxPixels=10e10) 
+                  
         return ee.List(plots.add(res))
     def mapped(x):
         if isinstance(x,numbers.Number):
@@ -117,8 +119,15 @@ def viewS2cell(imgcoll, poly):
                            .filterDate(ee.Date(w_startdate.value), ee.Date(w_enddate.value)) 
             tsl = get_timestamp_list(collection)
             bmap = collection.toBands() \
-                             .clip(poly) \
-                             .updateMask(watermask)                        
+                             .clip(poly)
+            pixels_in_cell = bmap.unmask().select(0) \
+                                         .reduceRegion(ee.Reducer.count(),scale=10,maxPixels=10e10) \
+                                         .values() \
+                                         .getInfo() 
+                                         
+            print(pixels_in_cell)                             
+                                                     
+            bmap = bmap.updateMask(watermask)                    
             bmap = bmap.mask(bmap.mask().And(maskDynamicWorld(dyn)))   
             
             fmap = bmap.multiply(0).where(bmap.gte(1),1).reduce(ee.Reducer.sum())      
