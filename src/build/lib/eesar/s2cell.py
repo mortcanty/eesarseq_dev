@@ -21,8 +21,7 @@ from geopy.geocoders import Nominatim
 
 dyn = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1') \
             .filterDate('2021-09-01', '2022-03-30') \
-            .select('label').mosaic()
-watermask = dyn.gt(ee.Image.constant(0)) 
+            .select('label').mosaic() 
 
 def maskDynamicWorld(image): 
     classes = {'built': 6, 'trees': 1, 'grass': 2, 'crops': 4, 'bare': 7, 'scrub': 5}
@@ -40,8 +39,6 @@ coords = [[[-96.06878489327627, 29.823701939611126],
 poly_houston = ee.Geometry.Polygon(coords)
 
 geolocator = Nominatim(timeout=10,user_agent='s2cell.ipynb')
-        
-watermask = ee.Image('UMD/hansen/global_forest_change_2015').select('datamask').eq(1)
 
 def GetTileLayerUrl(image):
     map_id = ee.Image(image).getMapId()
@@ -126,8 +123,7 @@ def viewS2cell(imgcoll, poly):
                                          .getInfo() 
                                          
             print(pixels_in_cell)                             
-                                                     
-            bmap = bmap.updateMask(watermask)                    
+                                                                         
             bmap = bmap.mask(bmap.mask().And(maskDynamicWorld(dyn)))   
             
             fmap = bmap.multiply(0).where(bmap.gte(1),1).reduce(ee.Reducer.sum())      
@@ -251,7 +247,7 @@ def on_scan_button_clicked(b):
             collection = ee.ImageCollection('users/djq/demo') \
                            .filterDate(ee.Date(w_startdate.value), ee.Date(w_enddate.value))
             tsl = get_timestamp_list(collection)   
-            bmap = collection.toBands().updateMask(watermask)                        
+            bmap = collection.toBands()                        
             bmap = bmap.mask(bmap.mask().And(maskDynamicWorld(dyn)))  
             bmap = bmap.rename(tsl)            
             # get the S2 cells within the Houston AOI        
