@@ -280,7 +280,16 @@ def clear_layers():
         if len(m.layers)>i:
             m.remove_layer(m.layers[i])    
         
-watermask = ee.Image('UMD/hansen/global_forest_change_2015').select('datamask').eq(1)        
+dyn = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1') \
+                    .filterDate('2021-09-01', '2022-03-30') \
+                    .select('label').mosaic()
+
+def maskDynamicWorld(image): 
+    return image.eq(ee.Image.constant(6)) # Built 
+
+watermask = ee.Image('UMD/hansen/global_forest_change_2015').select('datamask').eq(1)
+#watermask = dyn.gt(ee.Image.constant(0))
+        
         
 def make_mosaics(current, prev):
     '''
@@ -336,56 +345,59 @@ def on_collect_button_clicked(b):
             count = collection.size().getInfo()     
             if count==0:
                 raise ValueError('No images found') 
-#            footprint = ee.Geometry.Polygon(collection.first().get('system:footprint').getInfo()['coordinates'])
             print('Images found: %i, platform: %s'%(count,w_platform.value))
             
             collection = collection.sort('system:time_start')                                                                      
             archive_crs = ee.Image(collection.first()).select(0).projection().crs().getInfo()
             
-            relativeorbitnumbers = map(int,ee.List(collection.aggregate_array('relativeOrbitNumber_start')).getInfo())
+            relativeorbitnumbers = map( int, ee.List(collection.aggregate_array('relativeOrbitNumber_start')).getInfo() )
             rons = list(set(relativeorbitnumbers))
             rons.sort()
             
             cmap_list = ee.List([])
             bmap_list = ee.List([])
             
-            count = 500
-            
+            count = 500            
             for ron in rons:
                
-                collection1 = collection.filter(ee.Filter.eq('relativeOrbitNumber_start', ron))
+                collection_ron = collection.filter(ee.Filter.eq('relativeOrbitNumber_start', ron))
                 
-                timestamplist = get_timestamp_list(collection1)                  
-                c = Counter(timestamplist)    
+                timestamplist = get_timestamp_list(collection_ron)    
+
+                ctr = Counter(timestamplist)    
                 uniquetimestamps = list(set(timestamplist))
-                uniquetimestamps.sort()           
-                print('Relative orbit number %i\n  Time series length %i\n  Images along path %i'%(ron, len(uniquetimestamps),c[uniquetimestamps[0]])) 
-            
-                mosaic_lengths = [c[timestamp] for timestamp in uniquetimestamps]
-             
-                cList = collection1.map(get_vvvh).toList(500)   
-      
-                mLen = ee.List(mosaic_lengths) 
+                uniquetimestamps.sort() 
                 
-                first = ee.Dictionary({'plist':ee.List([]), 'clist':cList})   
+                path_lengths = [ctr[uts] for uts in uniquetimestamps]
+                print(path_lengths, len(set(path_lengths)))
                 
-                # make list of combined (mosaicked) images along orbit path 
-                pList = ee.List(ee.Dictionary(mLen.iterate(make_mosaics,first)).get('plist'))
- 
-                first = ee.Dictionary({'imlist':ee.List([]),'enl':ee.Number(4.4),'poly':poly})        
-                imList = ee.List(ee.Dictionary(pList.iterate(clipList,first)).get('imlist'))   
+                if len(set(path_lengths)) == 1:
                 
-                count = minimum(imList.size().getInfo(),count) 
-               
-                #Run the algorithm ************************************************
-                result = change_maps(imList, w_median.value, w_significance.value)
-                #******************************************************************
-                smap = ee.Image(result.get('smap')).byte()
-                cmap = ee.Image(result.get('cmap')).byte()
-                fmap = ee.Image(result.get('fmap')).byte() 
-                bmap = ee.Image(result.get('bmap')).byte()              
-                cmap_list = cmap_list.add( ee.Image.cat(cmap,smap,fmap).rename(['cmap','smap','fmap']) ) 
-                bmap_list = bmap_list.add( bmap ) 
+                    mosaic_lengths = [ctr[timestamp] for timestamp in uniquetimestamps]
+                 
+                    cList = collection_ron.map(get_vvvh).toList(500)   
+          
+                    # make list of combined (mosaicked) images along orbit path 
+                    mLen = ee.List(mosaic_lengths) 
+                    first = ee.Dictionary({'plist': ee.List([]), 'clist': cList})  
+                    pList = ee.List(ee.Dictionary(mLen.iterate(make_mosaics, first)).get('plist'))
+     
+                    first = ee.Dictionary({'imlist':ee.List([]),'enl':ee.Number(4.4),'poly':poly})        
+                    imList = ee.List(ee.Dictionary(pList.iterate(clipList, first)).get('imlist'))   
+                    
+                    count = minimum(imList.size().getInfo(),count) 
+                   
+                    #Run the algorithm ************************************************
+                    result = change_maps(imList, w_median.value, w_significance.value)
+                    #******************************************************************
+                    smap = ee.Image(result.get('smap')).byte()
+                    cmap = ee.Image(result.get('cmap')).byte()
+                    fmap = ee.Image(result.get('fmap')).byte() 
+                    bmap = ee.Image(result.get('bmap')).byte()              
+                    cmap_list = cmap_list.add( ee.Image.cat(cmap,smap,fmap).rename(['cmap','smap','fmap']) ) 
+                    bmap_list = bmap_list.add( bmap ) 
+                else:
+                    print('relative orbit %i indefinite length'%ron)
             # mosaicking 3-band images   
             cmaps = ee.ImageCollection(cmap_list).mosaic()
     
@@ -432,13 +444,10 @@ def on_preview_button_clicked(b):
             elif w_changemap.value == 'Bitemporal':
                 sel = int(w_interval.value)
                 sel = min(sel,count-1)
-                sel = max(sel,1)
-                
-                mp = bmaps.select(sel-1)
-                
+                sel = max(sel,1)                               
                 print('Bitemporal for interval ending: %s'%mp.bandNames().getInfo())
                 print('red = positive definite, cyan = negative definite, yellow = indefinite')  
-               
+                mp = bmaps.select(sel-1)
                 palette = rcy
                 mx = 3     
             if not w_quick.value:
@@ -447,7 +456,7 @@ def on_preview_button_clicked(b):
                 mp = mp.updateMask(watermask)
             if w_maskchange.value==True:   
                 if w_changemap.value=='Frequency':
-                    mp = mp.updateMask(mp.gt(w_minfreq.value))
+                    mp = mp.updateMask(mp.gte(w_minfreq.value))
                 else:
                     mp = mp.updateMask(mp.gt(0))    
             m.add_layer(TileLayer(url=GetTileLayerUrl(mp.visualize(min=0, max=mx, opacity=w_opacity.value, palette=palette)),name=w_changemap.value))           
@@ -507,7 +516,7 @@ def on_review_button_clicked(b):
                 mp = mp.updateMask(watermask)
             if w_maskchange.value==True:    
                 if w_changemap.value=='Frequency':
-                    mp = mp.updateMask(mp.gt(w_minfreq.value))
+                    mp = mp.updateMask(mp.gte(w_minfreq.value))
                 else:
                     mp = mp.updateMask(mp.gt(0))    
             m.add_layer(TileLayer(url=GetTileLayerUrl(mp.visualize(min=0, max=mx, opacity=w_opacity.value, palette=palette)),name=w_changemap.value))
@@ -570,7 +579,7 @@ def on_plot_button_clicked(b):
             print('Change fraction plots ...')                  
             assetImage = ee.Image(w_exportassetsname.value)
             k = assetImage.bandNames().length().subtract(3).getInfo()            
-            bmap1 = assetImage.select(ee.List.sequence(3,k+2))            
+            bmap1 = assetImage.select(ee.List.sequence(3,k+2)).clip(poly)            
             if w_maskwater.value:
                 bmap1 = bmap1.updateMask(watermask) 
             plots = ee.List(ee.List([1,2,3]).iterate(plot_iter,ee.List([]))).getInfo()           

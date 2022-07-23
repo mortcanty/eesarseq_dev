@@ -242,8 +242,8 @@ dyn = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1') \
 def maskDynamicWorld(image): 
     return image.eq(ee.Image.constant(6)) # Built 
 
-#watermask = ee.Image('UMD/hansen/global_forest_change_2015').select('datamask').eq(1)
-watermask = dyn.gt(ee.Image.constant(0))
+watermask = ee.Image('UMD/hansen/global_forest_change_2015').select('datamask').eq(1)
+#watermask = dyn.gt(ee.Image.constant(0))
 
 def GetTileLayerUrl(image):
     map_id = ee.Image(image).getMapId()

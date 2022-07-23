@@ -18,7 +18,6 @@ def det(im):
 
 def log_det_sum(im_list, j):
     """Returns log of determinant of the sum of the first j images in im_list."""
-    im_ist = ee.List(im_list)
     sumj = ee.ImageCollection(im_list.slice(0, j)).reduce(ee.Reducer.sum())
     return ee.Image(det(sumj)).log()
 
