@@ -120,10 +120,7 @@ def viewS2cell(imgcoll, poly):
             pixels_in_cell = bmap.unmask().select(0) \
                                          .reduceRegion(ee.Reducer.count(),scale=10,maxPixels=10e10) \
                                          .values() \
-                                         .getInfo() 
-                                         
-            print(pixels_in_cell)                             
-                                                                         
+                                         .getInfo()                                                                       
             bmap = bmap.mask(bmap.mask().And(maskDynamicWorld(dyn)))   
             
             fmap = bmap.multiply(0).where(bmap.gte(1),1).reduce(ee.Reducer.sum())      

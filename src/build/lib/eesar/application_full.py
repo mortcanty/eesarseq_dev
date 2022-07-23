@@ -301,7 +301,7 @@ def get_timestamp_list(collection):
         tmp = time.gmtime(int(timestamp)/1000)
         tsl.append(time.strftime('%x', tmp))        
     tsl= [x.replace('/','') for x in tsl]  
-    tsl = ['20'+x[4:]+x[0:4] for x in tsl]         
+    tsl = ['T20'+x[4:]+x[0:4] for x in tsl]         
     return tsl
 
 def minimum(a, b):      
@@ -345,7 +345,6 @@ def on_collect_button_clicked(b):
             relativeorbitnumbers = map(int,ee.List(collection.aggregate_array('relativeOrbitNumber_start')).getInfo())
             rons = list(set(relativeorbitnumbers))
             rons.sort()
-            print('Relative orbit numbers: '+str(rons))
             
             cmap_list = ee.List([])
             bmap_list = ee.List([])
@@ -360,12 +359,9 @@ def on_collect_button_clicked(b):
                 c = Counter(timestamplist)    
                 uniquetimestamps = list(set(timestamplist))
                 uniquetimestamps.sort()           
-                print('Orbit number %i  Time series length %i'%(ron, len(uniquetimestamps))) 
+                print('Relative orbit number %i\n  Time series length %i\n  Images along path %i'%(ron, len(uniquetimestamps),c[uniquetimestamps[0]])) 
             
                 mosaic_lengths = [c[timestamp] for timestamp in uniquetimestamps]
-            
-                for timestamp in uniquetimestamps:
-                    print(timestamp,c[timestamp])    
              
                 cList = collection1.map(get_vvvh).toList(500)   
       
@@ -389,13 +385,13 @@ def on_collect_button_clicked(b):
                 fmap = ee.Image(result.get('fmap')).byte() 
                 bmap = ee.Image(result.get('bmap')).byte()              
                 cmap_list = cmap_list.add( ee.Image.cat(cmap,smap,fmap).rename(['cmap','smap','fmap']) ) 
-                bmap_list = bmap_list.add( bmap ) #.rename(uniquetimestamps[1:]) )
+                bmap_list = bmap_list.add( bmap ) 
             # mosaicking 3-band images   
             cmaps = ee.ImageCollection(cmap_list).mosaic()
     
             bmap_list = bmap_list.map(trim_list)
             
-            bmaps = ee.ImageCollection(bmap_list).mosaic()
+            bmaps = ee.ImageCollection(bmap_list).mosaic().rename(uniquetimestamps[1:count])
              
             w_preview.disabled = False
             w_export_ass.disabled = False
@@ -477,7 +473,6 @@ def on_review_button_clicked(b):
             count = len(bnames)               
             jet = 'black,blue,cyan,yellow,red'
             rcy = 'black,red,cyan,yellow'
-            ggg = 'black,green'
             smap = asset.select('smap').byte()
             cmap = asset.select('cmap').byte()
             fmap = asset.select('fmap').byte()
@@ -524,15 +519,8 @@ w_review.on_click(on_review_button_clicked)
 def on_export_ass_button_clicked(b):
     ''' Export to assets
     '''
-    try:
-        smap = ee.Image(result.get('smap')).byte()
-        cmap = ee.Image(result.get('cmap')).byte()
-        fmap = ee.Image(result.get('fmap')).byte() 
-        bmap = ee.Image(result.get('bmap')).byte() 
-#      in case of duplicates                  
-        timestamplist1 = [uniquetimestamps[i] + '_' + str(i+1) for i in range(len(uniquetimestamps))]             
-        cmaps = ee.Image.cat(cmap,smap,fmap,bmap).rename(['cmap','smap','fmap']+timestamplist1[1:])  
-        assexport = ee.batch.Export.image.toAsset(cmaps.byte().clip(poly),
+    try:         
+        assexport = ee.batch.Export.image.toAsset(ee.Image.cat(cmaps,bmaps).byte().clip(poly),
                                     description='assetExportTask', 
                                     pyramidingPolicy={".default": 'sample'},
                                     assetId=w_exportassetsname.value,scale=10,maxPixels=1e10)      
@@ -549,16 +537,10 @@ w_export_ass.on_click(on_export_ass_button_clicked)
 def on_export_drv_button_clicked(b):
     ''' Export to Google Drive
     '''
-    try:
-        smap = ee.Image(result.get('smap')).byte()
-        cmap = ee.Image(result.get('cmap')).byte()
-        fmap = ee.Image(result.get('fmap')).byte() 
-        bmap = ee.Image(result.get('bmap')).byte()            
-#      in case of duplicates                  
-        timestamplist1 = [uniquetimestamps[i] + '_' + str(i+1) for i in range(len(uniquetimestamps))]        
-        cmaps = ee.Image.cat(cmap,smap,fmap,bmap).rename(['cmap','smap','fmap']+timestamplist1[1:])  
+    try:     
+        cmaps = ee.Image.cat(cmaps,bmaps)  
         fileNamePrefix=w_exportdrivename.value.replace('/','-')            
-        gdexport = ee.batch.Export.image.toDrive(cmaps.byte().clip(poly),
+        gdexport = ee.batch.Export.image.toDrive(ee.Image.cat(cmaps,bmaps).byte().clip(poly),
                                     description='driveExportTask', 
                                     folder = 'gee',
                                     fileNamePrefix=fileNamePrefix,scale=10,maxPixels=1e10)   
