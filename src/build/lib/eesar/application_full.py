@@ -100,14 +100,14 @@ w_exportscale = widgets.FloatText(
 )
 w_startdate = widgets.Text(
     layout = widgets.Layout(width='200px'),
-    value='2018-04-01',
+    value='2019-01-01',
     placeholder=' ',
     description='StartDate:',
     disabled=False
 )
 w_enddate = widgets.Text(
     layout = widgets.Layout(width='200px'),
-    value='2018-11-01',
+    value='2020-01-01',
     placeholder=' ',
     description='EndDate:',
     disabled=False
@@ -151,6 +151,11 @@ w_opacity = widgets.BoundedFloatText(
     description='Opacity:',
     disabled=False
 )
+w_dw = widgets.Checkbox(
+    value=False,
+    description='DW Mask',
+    disabled=False
+)
 w_out = widgets.Output(
     layout=widgets.Layout(width='700px',border='1px solid black')
 )
@@ -164,7 +169,7 @@ w_export_ass = widgets.Button(description='ExportToAssets',disabled=True)
 w_export_drv = widgets.Button(description='ExportToDrive',disabled=True)
 w_plot = widgets.Button(description='PlotAsset',disabled=False)
 
-w_masks = widgets.VBox([w_maskchange,w_maskwater,w_quick])
+w_masks = widgets.VBox([w_maskchange,w_maskwater,w_dw,w_quick])
 w_dates = widgets.VBox([w_startdate,w_enddate])
 w_assets = widgets.VBox([w_review,w_plot,w_reset])
 w_bmap = widgets.VBox([w_interval,w_maxfreq,w_minfreq])
@@ -353,6 +358,7 @@ def on_collect_button_clicked(b):
             relativeorbitnumbers = map( int, ee.List(collection.aggregate_array('relativeOrbitNumber_start')).getInfo() )
             rons = list(set(relativeorbitnumbers))
             rons.sort()
+            print('Relative orbit numbers: %s'%str(rons))
             
             cmap_list = ee.List([])
             bmap_list = ee.List([])
@@ -369,7 +375,6 @@ def on_collect_button_clicked(b):
                 uniquetimestamps.sort() 
                 
                 path_lengths = [ctr[uts] for uts in uniquetimestamps]
-                print(path_lengths, len(set(path_lengths)))
                 
                 if len(set(path_lengths)) == 1:
                 
@@ -397,7 +402,7 @@ def on_collect_button_clicked(b):
                     cmap_list = cmap_list.add( ee.Image.cat(cmap,smap,fmap).rename(['cmap','smap','fmap']) ) 
                     bmap_list = bmap_list.add( bmap ) 
                 else:
-                    print('relative orbit %i indefinite length'%ron)
+                    print('relative orbit %i excluded: includes differing series lengths'%ron)
             # mosaicking 3-band images   
             cmaps = ee.ImageCollection(cmap_list).mosaic()
     
@@ -431,14 +436,21 @@ def on_preview_button_clicked(b):
             print('Shortest orbit path series length: %i images, previewing (please wait for raster overlay) ...'%count)
             if w_changemap.value=='First':
                 mp = ee.Image(cmaps.select('smap')).byte()
+                if w_dw.value:
+                    mp = mp.mask(mp.mask().And(maskDynamicWorld(dyn)))
+                
                 mx = count
                 print('Interval of first change:\n blue = early, red = late')
             elif w_changemap.value=='Last':
                 mp=ee.Image(cmaps.select('cmap')).byte()
+                if w_dw.value:
+                    mp = mp.mask(mp.mask().And(maskDynamicWorld(dyn)))
                 mx = count
                 print('Interval of last change:\n blue = early, red = late')
             elif w_changemap.value=='Frequency':
                 mp = ee.Image(cmaps.select('fmap')).byte()
+                if w_dw.value:
+                    mp = mp.mask(mp.mask().And(maskDynamicWorld(dyn)))
                 mx = w_maxfreq.value
                 print('Change frequency :\n blue = few, red = many')
             elif w_changemap.value == 'Bitemporal':
@@ -448,12 +460,14 @@ def on_preview_button_clicked(b):
                 print('Bitemporal for interval ending: %s'%mp.bandNames().getInfo())
                 print('red = positive definite, cyan = negative definite, yellow = indefinite')  
                 mp = bmaps.select(sel-1)
+                if w_dw.value:
+                    mp = mp.mask(mp.mask().And(maskDynamicWorld(dyn)))
                 palette = rcy
                 mx = 3     
             if not w_quick.value:
                 mp = mp.reproject(crs=archive_crs,scale=float(w_exportscale.value))
             if w_maskwater.value==True:
-                mp = mp.updateMask(watermask)
+                mp = mp.updateMask(watermask) 
             if w_maskchange.value==True:   
                 if w_changemap.value=='Frequency':
                     mp = mp.updateMask(mp.gte(w_minfreq.value))
