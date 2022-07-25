@@ -4,15 +4,11 @@
 import ee
 ee.Initialize
 
-from eesar.sarseqalgorithm import change_maps 
-from eesar.collect import assemble_and_run
+from eesar.eesarseq import assemble_and_run
 
-import time
-import math
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import norm, gamma, f, chi2
-from collections import Counter
 import ipywidgets as widgets
 from IPython.display import display
 from ipyleaflet import (Map,DrawControl,TileLayer,
@@ -27,7 +23,7 @@ from geopy.geocoders import Nominatim
  The widget interface
  ********************
 '''
-poly = None
+aoi = None
 
 geolocator = Nominatim(timeout=10,user_agent='application_full.ipynb')
 
@@ -263,16 +259,16 @@ def GetTileLayerUrl(image):
     return map_id["tile_fetcher"].url_format        
 
 def handle_draw(self, action, geo_json):
-    global poly
+    global aoi
     coords =  geo_json['geometry']['coordinates']
     if action == 'created':
-        poly = ee.Geometry.Polygon(coords)
+        aoi = coords
         w_preview.disabled = True
         w_export_ass.disabled = True
         w_export_drv.disabled = True 
         w_collect.disabled = False
     elif action == 'deleted':
-        poly = None
+        aoi = None
         w_collect.disabled = True  
         w_preview.disabled = True    
         w_export_ass.disabled = True
@@ -286,16 +282,18 @@ def on_collect_button_clicked(b):
         clear_layers()
         print('running on GEE archive COPERNICUS/S1_GRD')
         #assemble time series and run the algorithm
-        cmaps, bmaps, count, rons, collection, crs = assemble_and_run(poly, median = w_median.value, 
-                                                      significance = w_significance.value, startdate=w_startdate.value, 
-                                                      enddate=w_enddate.value, platform=w_platform.value, 
-                                                      orbitpass=w_orbitpass.value, relativeorbitnumber=w_relativeorbitnumber.value)
+        cmaps, bmaps, count, rons, collection = assemble_and_run(aoi, median = w_median.value, 
+                                                  significance = w_significance.value, startdate=w_startdate.value, 
+                                                  enddate=w_enddate.value, platform=w_platform.value, 
+                                                  orbitpass=w_orbitpass.value, ron=w_relativeorbitnumber.value)
+#        archive_crs = ee.Image(collection.first()).select(0).projection().crs().getInfo()        
         w_preview.disabled = False
         w_export_ass.disabled = False
         w_export_drv.disabled = False
         #Display S1 mosaic 
         if len(rons)>0:
-            print( 'please wait for raster overlay ...' )
+            print('Relative orbit numbers: %s'%str(rons))
+            print('Shortest orbit path series length: %i images\n please wait for raster overlay ...'%count)
             clear_layers()
             S1 = collection.mosaic().select(0).visualize(min=-15, max=4)
             m.add_layer(TileLayer(url=GetTileLayerUrl(S1),name='S1'))                          
@@ -310,7 +308,7 @@ def on_preview_button_clicked(b):
             rcy = 'black,red,cyan,yellow'
             palette = jet
             w_out.clear_output()
-            print('Shortest orbit path series length: %i images, previewing (please wait for raster overlay) ...'%count)
+            print('Shortest orbit path series length: %i images\n previewing (please wait for raster overlay ...'%count)
             if w_changemap.value=='First':
                 mp = ee.Image(cmaps.select('smap')).byte()
                 if w_dw.value:
@@ -366,8 +364,8 @@ def on_review_button_clicked(b):
             _ = ee.Image(w_exportassetsname.value).getInfo()
 #          ---------------------------            
             asset = ee.Image(w_exportassetsname.value)
-            poly = ee.Geometry.Polygon(ee.Geometry(asset.get('system:footprint')).coordinates())
-            center = poly.centroid().coordinates().getInfo()
+            aoi = ee.Geometry.Polygon(ee.Geometry(asset.get('system:footprint')).coordinates())
+            center = aoi.centroid().coordinates().getInfo()
             center.reverse()
             m.center = center  
             bnames = asset.bandNames().getInfo()[3:]
@@ -420,7 +418,7 @@ w_review.on_click(on_review_button_clicked)
 def on_export_ass_button_clicked(b):
     ''' Export to assets '''
     try:         
-        assexport = ee.batch.Export.image.toAsset(ee.Image.cat(cmaps,bmaps).byte().clip(poly),
+        assexport = ee.batch.Export.image.toAsset(ee.Image.cat(cmaps,bmaps).byte().clip(aoi),
                                     description='assetExportTask', 
                                     pyramidingPolicy={".default": 'sample'},
                                     assetId=w_exportassetsname.value,scale=10,maxPixels=1e10)      
@@ -439,7 +437,7 @@ def on_export_drv_button_clicked(b):
     try:     
         cmaps = ee.Image.cat(cmaps,bmaps)  
         fileNamePrefix=w_exportdrivename.value.replace('/','-')            
-        gdexport = ee.batch.Export.image.toDrive(ee.Image.cat(cmaps,bmaps).byte().clip(poly),
+        gdexport = ee.batch.Export.image.toDrive(ee.Image.cat(cmaps,bmaps).byte().clip(aoi),
                                     description='driveExportTask', 
                                     folder = 'gee',
                                     fileNamePrefix=fileNamePrefix,scale=10,maxPixels=1e10)   
@@ -469,7 +467,7 @@ def on_plot_button_clicked(b):
             print('Change fraction plots ...')                  
             assetImage = ee.Image(w_exportassetsname.value)
             k = assetImage.bandNames().length().subtract(3).getInfo()            
-            bmap1 = assetImage.select(ee.List.sequence(3,k+2)).clip(poly)            
+            bmap1 = assetImage.select(ee.List.sequence(3,k+2)).clip(aoi)            
             if w_maskwater.value:
                 bmap1 = bmap1.updateMask(watermask) 
             plots = ee.List(ee.List([1,2,3]).iterate(plot_iter,ee.List([]))).getInfo()           
@@ -507,7 +505,7 @@ def run():
     ews = basemap_to_tiles(basemaps.Esri.WorldStreetMap)
     ewi = basemap_to_tiles(basemaps.Esri.WorldImagery)
   
-    dc = DrawControl(polyline={},circlemarker={})
+    dc = DrawControl(aoiline={},circlemarker={})
     dc.rectangle = {"shapeOptions": {"fillColor": "#0000ff","color": "#0000ff","fillOpacity": 0.05}}
     dc.polygon = {"shapeOptions": {"fillColor": "#0000ff","color": "#0000ff","fillOpacity": 0.05}}
 
