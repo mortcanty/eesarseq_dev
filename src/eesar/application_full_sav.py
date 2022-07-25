@@ -5,7 +5,6 @@ import ee
 ee.Initialize
 
 from eesar.sarseqalgorithm import change_maps 
-from eesar.collect import assemble_and_run
 
 import time
 import math
@@ -191,16 +190,14 @@ w_export = widgets.VBox([widgets.HBox([w_export_ass,w_exportassetsname]),
                          widgets.HBox([w_export_drv,w_exportdrivename])])
 w_signif = widgets.VBox([w_significance,w_median])
 
-#Assemble the interface
 
+#Assemble the interface
 row1 = widgets.HBox([w_platform,w_orbitpass,w_relativeorbitnumber,w_dates])
 row2 = widgets.HBox([w_collect,w_signif,w_opacity,w_export])
 row3 = widgets.HBox([w_preview,w_changemap,w_bmap,w_masks,w_assets])
 row4 = widgets.HBox([w_out,w_goto,w_location])
 
 box = widgets.VBox([row1,row2,row3,row4])
-
-#Event handers
 
 def on_widget_change(b):
     w_preview.disabled = True
@@ -277,28 +274,157 @@ def handle_draw(self, action, geo_json):
         w_preview.disabled = True    
         w_export_ass.disabled = True
         w_export_drv.disabled = True      
+
+def getS1collection():
+    return ee.ImageCollection('COPERNICUS/S1_GRD') \
+                      .filterBounds(poly) \
+                      .filterDate(ee.Date(w_startdate.value), ee.Date(w_enddate.value)) \
+                      .filter(ee.Filter.eq('transmitterReceiverPolarisation', ['VV','VH'])) \
+                      .filter(ee.Filter.eq('resolution_meters', 10)) \
+                      .filter(ee.Filter.eq('instrumentMode', 'IW')) \
+                      .filter(ee.Filter.eq('orbitProperties_pass', w_orbitpass.value)) 
+            
+def get_vvvh(image):   
+    ''' get 'VV' and 'VH' bands from sentinel-1 imageCollection and restore linear signal from db-values '''
+    return image.select('VV','VH').multiply(ee.Image.constant(math.log(10.0)/10.0)).exp()
+
+def convert_timestamp_list(tsl):
+    ''' Make timestamps in YYYYMMDD format '''           
+    tsl= [x.replace('/','') for x in tsl]  
+    tsl = ['T20'+x[4:]+x[0:4] for x in tsl]         
+    return tsl
+
+def clipList(current,prev):
+    ''' clip a list of images and multiply by ENL'''
+    imlist = ee.List(ee.Dictionary(prev).get('imlist'))
+    poly = ee.Dictionary(prev).get('poly') 
+    enl = ee.Number(ee.Dictionary(prev).get('enl')) 
+    imlist = imlist.add(ee.Image(current).multiply(enl).clip(poly))
+    return ee.Dictionary({'imlist':imlist,'poly':poly,'enl':enl})
+        
+        
+def make_mosaics(current, prev):
+    ''' return equitemporal mosaicked images in plist '''
+    mLen = ee.List(current)
+    prev = ee.Dictionary(prev)
+    pList = ee.List(prev.get('plist'))
+    cList = ee.List(prev.get('clist'))   
+    pList = pList.add( ee.ImageCollection(cList.slice(0,mLen)).mosaic() )    
+    return ee.Dictionary({'plist':pList, 'clist':cList.slice(mLen)})
+
+def get_timestamp_list(collection):
+    ''' make timestamps from image collection in YYYYMMDD format '''   
+    acquisition_times = ee.List(collection.aggregate_array('system:time_start')).getInfo()
+    tsl = []
+    for timestamp in acquisition_times:
+        tmp = time.gmtime(int(timestamp)/1000)
+        tsl.append(time.strftime('%x', tmp))        
+    tsl= [x.replace('/','') for x in tsl]  
+    tsl = ['T20'+x[4:]+x[0:4] for x in tsl]         
+    return tsl
     
 def on_collect_button_clicked(b):
     ''' Collect a time series from the archive '''
-    global cmaps, bmaps, count, crs
+    global cmaps, bmaps, count, archive_crs
+    
+    def minimum(a, b):      
+        if a <= b:
+            return a
+        else:
+            return b
+    
+    def trim_list(current): 
+        current = ee.Image(current)
+        bns = current.bandNames().slice(0,count-1)
+        return current.select(ee.List.sequence(0,count-2),bns)
+    
     with w_out:
-        w_out.clear_output()
-        clear_layers()
-        print('running on GEE archive COPERNICUS/S1_GRD')
-        #assemble time series and run the algorithm
-        cmaps, bmaps, count, rons, collection, crs = assemble_and_run(poly, median = w_median.value, 
-                                                      significance = w_significance.value, startdate=w_startdate.value, 
-                                                      enddate=w_enddate.value, platform=w_platform.value, 
-                                                      orbitpass=w_orbitpass.value, relativeorbitnumber=w_relativeorbitnumber.value)
-        w_preview.disabled = False
-        w_export_ass.disabled = False
-        w_export_drv.disabled = False
-        #Display S1 mosaic 
-        if len(rons)>0:
-            print( 'please wait for raster overlay ...' )
+        try:
+            w_out.clear_output()
             clear_layers()
-            S1 = collection.mosaic().select(0).visualize(min=-15, max=4)
-            m.add_layer(TileLayer(url=GetTileLayerUrl(S1),name='S1'))                          
+            print('running on GEE archive COPERNICUS/S1_GRD')
+            
+            collection = getS1collection()          
+            if w_platform.value != 'Both':
+                collection = collection.filter(ee.Filter.eq('platform_number', w_platform.value))
+            if w_relativeorbitnumber.value > 0:
+                collection = collection.filter(ee.Filter.eq('relativeOrbitNumber_start', int(w_relativeorbitnumber.value)))    
+            count = collection.size().getInfo()     
+            if count==0:
+                raise ValueError('No images found') 
+            print('Images found: %i, platform: %s'%(count,w_platform.value))
+            
+            collection = collection.sort('system:time_start')                                                                      
+            archive_crs = ee.Image(collection.first()).select(0).projection().crs().getInfo()
+            
+            relativeorbitnumbers = map( int, ee.List(collection.aggregate_array('relativeOrbitNumber_start')).getInfo() )
+            rons = list(set(relativeorbitnumbers))
+            rons.sort()
+            print('Relative orbit numbers: %s'%str(rons))
+            
+            cmap_list = ee.List([])
+            bmap_list = ee.List([])
+            
+            count = 500            
+            for ron in rons:
+               
+                collection_ron = collection.filter(ee.Filter.eq('relativeOrbitNumber_start', ron))
+                
+                timestamplist = get_timestamp_list(collection_ron)    
+
+                ctr = Counter(timestamplist)    
+                uniquetimestamps = list(set(timestamplist))
+                uniquetimestamps.sort() 
+                
+                path_lengths = [ctr[uts] for uts in uniquetimestamps]
+                
+                # only process paths with unambiguous time series
+                if len(set(path_lengths)) == 1:
+                
+                    mosaic_lengths = [ctr[timestamp] for timestamp in uniquetimestamps]
+                 
+                    cList = collection_ron.map(get_vvvh).toList(500)   
+          
+                    # make list of combined (mosaicked) images along orbit path 
+                    mLen = ee.List(mosaic_lengths) 
+                    first = ee.Dictionary({'plist': ee.List([]), 'clist': cList})  
+                    pList = ee.List(ee.Dictionary(mLen.iterate(make_mosaics, first)).get('plist'))
+     
+                    first = ee.Dictionary({'imlist':ee.List([]),'enl':ee.Number(4.4),'poly':poly})        
+                    imList = ee.List(ee.Dictionary(pList.iterate(clipList, first)).get('imlist'))   
+                    
+                    count = minimum(imList.size().getInfo(),count) 
+                   
+                    #Run the algorithm ************************************************
+                    result = change_maps(imList, w_median.value, w_significance.value)
+                    #******************************************************************
+                    smap = ee.Image(result.get('smap')).byte()
+                    cmap = ee.Image(result.get('cmap')).byte()
+                    fmap = ee.Image(result.get('fmap')).byte() 
+                    bmap = ee.Image(result.get('bmap')).byte()              
+                    cmap_list = cmap_list.add( ee.Image.cat(cmap,smap,fmap).rename(['cmap','smap','fmap']) ) 
+                    bmap_list = bmap_list.add( bmap ) 
+                else:
+                    print('relative orbit %i excluded: includes differing series lengths'%ron)
+                    
+            # mosaic smap,cmap,fmap images   
+            cmaps = ee.ImageCollection(cmap_list).mosaic()
+            # truncate bitemporal maps to length of shortest series
+            bmap_list = bmap_list.map(trim_list)
+            # mosaic bitemporal maps over orbit paths
+            bmaps = ee.ImageCollection(bmap_list).mosaic().rename(uniquetimestamps[1:count])
+             
+            w_preview.disabled = False
+            w_export_ass.disabled = False
+            w_export_drv.disabled = False
+            #Display S1 mosaic 
+            if len(rons)>0:
+                print( 'please wait for raster overlay ...' )
+                clear_layers()
+                S1 = collection.mosaic().select(0).visualize(min=-15, max=4)
+                m.add_layer(TileLayer(url=GetTileLayerUrl(S1),name='S1'))                          
+        except Exception as e:
+            print('Error: %s'%e) 
 
 w_collect.on_click(on_collect_button_clicked)                  
 
@@ -342,7 +468,7 @@ def on_preview_button_clicked(b):
                 palette = rcy
                 mx = 3     
             if not w_quick.value:
-                mp = mp.reproject(crs=crs,scale=float(w_exportscale.value))
+                mp = mp.reproject(crs=archive_crs,scale=float(w_exportscale.value))
             if w_maskwater.value==True:
                 mp = mp.updateMask(watermask) 
             if w_maskchange.value==True:   

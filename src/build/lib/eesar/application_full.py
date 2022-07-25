@@ -1,11 +1,14 @@
-# wide.py
-# widget interface for SAR sequential change detection, wide scale version
+# application_ful.py
+# widget interface for SAR sequential change detection, full scale version
 
 import ee
 ee.Initialize
 
 from eesar.sarseqalgorithm import change_maps 
-import time, math
+from eesar.collect import assemble_and_run
+
+import time
+import math
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import norm, gamma, f, chi2
@@ -19,12 +22,23 @@ from ipyleaflet import (Map,DrawControl,TileLayer,
                         LayersControl)
 from geopy.geocoders import Nominatim
 
-# ********************
-# The widget interface
-# ********************
-
+'''
+ ********************
+ The widget interface
+ ********************
+'''
 poly = None
-geolocator = Nominatim(timeout=10,user_agent='tutorial-pt-4.ipynb')
+
+geolocator = Nominatim(timeout=10,user_agent='application_full.ipynb')
+
+dyn = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1') \
+                    .filterDate('2021-09-01', '2022-03-30') \
+                    .select('label').mosaic()
+
+def maskDynamicWorld(image): 
+    return image.eq(ee.Image.constant(6)) # Built 
+
+watermask = ee.Image('UMD/hansen/global_forest_change_2015').select('datamask').eq(1)
 
 w_location = widgets.Text(
     layout = widgets.Layout(width='150px'),
@@ -173,14 +187,26 @@ w_masks = widgets.VBox([w_maskchange,w_maskwater,w_dw,w_quick])
 w_dates = widgets.VBox([w_startdate,w_enddate])
 w_assets = widgets.VBox([w_review,w_plot,w_reset])
 w_bmap = widgets.VBox([w_interval,w_maxfreq,w_minfreq])
-w_export = widgets.VBox([widgets.HBox([w_export_ass,w_exportassetsname]),widgets.HBox([w_export_drv,w_exportdrivename])])
+w_export = widgets.VBox([widgets.HBox([w_export_ass,w_exportassetsname]),
+                         widgets.HBox([w_export_drv,w_exportdrivename])])
 w_signif = widgets.VBox([w_significance,w_median])
+
+#Assemble the interface
+
+row1 = widgets.HBox([w_platform,w_orbitpass,w_relativeorbitnumber,w_dates])
+row2 = widgets.HBox([w_collect,w_signif,w_opacity,w_export])
+row3 = widgets.HBox([w_preview,w_changemap,w_bmap,w_masks,w_assets])
+row4 = widgets.HBox([w_out,w_goto,w_location])
+
+box = widgets.VBox([row1,row2,row3,row4])
+
+#Event handers
 
 def on_widget_change(b):
     w_preview.disabled = True
     w_export_ass.disabled = True
     w_export_drv.disabled = True
-
+    
 def on_changemap_widget_change(b):   
     if b['new']=='Bitemporal':
         w_interval.disabled=False
@@ -192,7 +218,24 @@ def on_changemap_widget_change(b):
     else:
         w_maxfreq.disabled=True 
         w_minfreq.disabled=True   
+
+#These widget changes require a new collect
+w_orbitpass.observe(on_widget_change,names='value')
+w_platform.observe(on_widget_change,names='value')
+w_relativeorbitnumber.observe(on_widget_change,names='value')
+w_startdate.observe(on_widget_change,names='value')
+w_enddate.observe(on_widget_change,names='value')
+w_median.observe(on_widget_change,names='value')
+w_significance.observe(on_widget_change,names='value')
+w_changemap.observe(on_changemap_widget_change,names='value')  
+
         
+def clear_layers():
+    for i in range(20,2,-1): 
+        if len(m.layers)>i:
+            m.remove_layer(m.layers[i])    
+
+
 def on_reset_button_clicked(b):
     try:
         clear_layers()
@@ -214,24 +257,6 @@ def on_goto_button_clicked(b):
 
 w_goto.on_click(on_goto_button_clicked)
 
-#These widget changes require a new collect
-w_orbitpass.observe(on_widget_change,names='value')
-w_platform.observe(on_widget_change,names='value')
-w_relativeorbitnumber.observe(on_widget_change,names='value')
-w_startdate.observe(on_widget_change,names='value')
-w_enddate.observe(on_widget_change,names='value')
-w_median.observe(on_widget_change,names='value')
-w_significance.observe(on_widget_change,names='value')
-w_changemap.observe(on_changemap_widget_change,names='value')  
-
-row1 = widgets.HBox([w_platform,w_orbitpass,w_relativeorbitnumber,w_dates])
-row2 = widgets.HBox([w_collect,w_signif,w_opacity,w_export])
-row3 = widgets.HBox([w_preview,w_changemap,w_bmap,w_masks,w_assets])
-row4 = widgets.HBox([w_out,w_goto,w_location])
-
-box = widgets.VBox([row1,row2,row3,row4])
-
-#@title Collect
 
 def GetTileLayerUrl(image):
     map_id = ee.Image(image).getMapId()
@@ -252,181 +277,33 @@ def handle_draw(self, action, geo_json):
         w_preview.disabled = True    
         w_export_ass.disabled = True
         w_export_drv.disabled = True      
-
-def getS1collection():
-    return ee.ImageCollection('COPERNICUS/S1_GRD') \
-                      .filterBounds(poly) \
-                      .filterDate(ee.Date(w_startdate.value), ee.Date(w_enddate.value)) \
-                      .filter(ee.Filter.eq('transmitterReceiverPolarisation', ['VV','VH'])) \
-                      .filter(ee.Filter.eq('resolution_meters', 10)) \
-                      .filter(ee.Filter.eq('instrumentMode', 'IW')) \
-                      .filter(ee.Filter.eq('orbitProperties_pass', w_orbitpass.value)) 
-            
-def get_vvvh(image):   
-    ''' get 'VV' and 'VH' bands from sentinel-1 imageCollection and restore linear signal from db-values '''
-    return image.select('VV','VH').multiply(ee.Image.constant(math.log(10.0)/10.0)).exp()
-
-def convert_timestamp_list(tsl):
-    # Make timestamps in YYYYMMDD format            
-    tsl= [x.replace('/','') for x in tsl]  
-    tsl = ['T20'+x[4:]+x[0:4] for x in tsl]         
-    return tsl
-
-def clipList(current,prev):
-    ''' clip a list of images and multiply by ENL'''
-    imlist = ee.List(ee.Dictionary(prev).get('imlist'))
-    poly = ee.Dictionary(prev).get('poly') 
-    enl = ee.Number(ee.Dictionary(prev).get('enl')) 
-    imlist = imlist.add(ee.Image(current).multiply(enl).clip(poly))
-    return ee.Dictionary({'imlist':imlist,'poly':poly,'enl':enl})
-
-def clear_layers():
-    for i in range(20,2,-1): 
-        if len(m.layers)>i:
-            m.remove_layer(m.layers[i])    
-        
-dyn = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1') \
-                    .filterDate('2021-09-01', '2022-03-30') \
-                    .select('label').mosaic()
-
-def maskDynamicWorld(image): 
-    return image.eq(ee.Image.constant(6)) # Built 
-
-watermask = ee.Image('UMD/hansen/global_forest_change_2015').select('datamask').eq(1)
-#watermask = dyn.gt(ee.Image.constant(0))
-        
-        
-def make_mosaics(current, prev):
-    '''
-    return equitemporal mosaicked images in plist   
-    '''
-    mLen = ee.List(current)
-    prev = ee.Dictionary(prev)
-    pList = ee.List(prev.get('plist'))
-    cList = ee.List(prev.get('clist'))   
-    pList = pList.add( ee.ImageCollection(cList.slice(0,mLen)).mosaic() )    
-    return ee.Dictionary({'plist':pList, 'clist':cList.slice(mLen)})
-
-def get_timestamp_list(collection):
-    ''' make timestamps from image collection in YYYYMMDD format '''   
-    acquisition_times = ee.List(collection.aggregate_array('system:time_start')).getInfo()
-    tsl = []
-    for timestamp in acquisition_times:
-        tmp = time.gmtime(int(timestamp)/1000)
-        tsl.append(time.strftime('%x', tmp))        
-    tsl= [x.replace('/','') for x in tsl]  
-    tsl = ['T20'+x[4:]+x[0:4] for x in tsl]         
-    return tsl
-
-def minimum(a, b):      
-    if a <= b:
-        return a
-    else:
-        return b
     
-
 def on_collect_button_clicked(b):
-    ''' 
-    Collect a time series from the archive 
-    '''
-    global cmaps, bmaps, count, archive_crs
-    
-    def trim_list(current): 
-        current = ee.Image(current)
-        bns = current.bandNames().slice(0,count-1)
-        return current.select(ee.List.sequence(0,count-2),bns)
-    
+    ''' Collect a time series from the archive '''
+    global cmaps, bmaps, count, crs
     with w_out:
-        try:
-            w_out.clear_output()
+        w_out.clear_output()
+        clear_layers()
+        print('running on GEE archive COPERNICUS/S1_GRD')
+        #assemble time series and run the algorithm
+        cmaps, bmaps, count, rons, collection, crs = assemble_and_run(poly, median = w_median.value, 
+                                                      significance = w_significance.value, startdate=w_startdate.value, 
+                                                      enddate=w_enddate.value, platform=w_platform.value, 
+                                                      orbitpass=w_orbitpass.value, relativeorbitnumber=w_relativeorbitnumber.value)
+        w_preview.disabled = False
+        w_export_ass.disabled = False
+        w_export_drv.disabled = False
+        #Display S1 mosaic 
+        if len(rons)>0:
+            print( 'please wait for raster overlay ...' )
             clear_layers()
-            print('running on GEE archive COPERNICUS/S1_GRD')
-            
-            collection = getS1collection()          
-            if w_platform.value != 'Both':
-                collection = collection.filter(ee.Filter.eq('platform_number', w_platform.value))
-            if w_relativeorbitnumber.value > 0:
-                collection = collection.filter(ee.Filter.eq('relativeOrbitNumber_start', int(w_relativeorbitnumber.value)))    
-            count = collection.size().getInfo()     
-            if count==0:
-                raise ValueError('No images found') 
-            print('Images found: %i, platform: %s'%(count,w_platform.value))
-            
-            collection = collection.sort('system:time_start')                                                                      
-            archive_crs = ee.Image(collection.first()).select(0).projection().crs().getInfo()
-            
-            relativeorbitnumbers = map( int, ee.List(collection.aggregate_array('relativeOrbitNumber_start')).getInfo() )
-            rons = list(set(relativeorbitnumbers))
-            rons.sort()
-            print('Relative orbit numbers: %s'%str(rons))
-            
-            cmap_list = ee.List([])
-            bmap_list = ee.List([])
-            
-            count = 500            
-            for ron in rons:
-               
-                collection_ron = collection.filter(ee.Filter.eq('relativeOrbitNumber_start', ron))
-                
-                timestamplist = get_timestamp_list(collection_ron)    
-
-                ctr = Counter(timestamplist)    
-                uniquetimestamps = list(set(timestamplist))
-                uniquetimestamps.sort() 
-                
-                path_lengths = [ctr[uts] for uts in uniquetimestamps]
-                
-                if len(set(path_lengths)) == 1:
-                
-                    mosaic_lengths = [ctr[timestamp] for timestamp in uniquetimestamps]
-                 
-                    cList = collection_ron.map(get_vvvh).toList(500)   
-          
-                    # make list of combined (mosaicked) images along orbit path 
-                    mLen = ee.List(mosaic_lengths) 
-                    first = ee.Dictionary({'plist': ee.List([]), 'clist': cList})  
-                    pList = ee.List(ee.Dictionary(mLen.iterate(make_mosaics, first)).get('plist'))
-     
-                    first = ee.Dictionary({'imlist':ee.List([]),'enl':ee.Number(4.4),'poly':poly})        
-                    imList = ee.List(ee.Dictionary(pList.iterate(clipList, first)).get('imlist'))   
-                    
-                    count = minimum(imList.size().getInfo(),count) 
-                   
-                    #Run the algorithm ************************************************
-                    result = change_maps(imList, w_median.value, w_significance.value)
-                    #******************************************************************
-                    smap = ee.Image(result.get('smap')).byte()
-                    cmap = ee.Image(result.get('cmap')).byte()
-                    fmap = ee.Image(result.get('fmap')).byte() 
-                    bmap = ee.Image(result.get('bmap')).byte()              
-                    cmap_list = cmap_list.add( ee.Image.cat(cmap,smap,fmap).rename(['cmap','smap','fmap']) ) 
-                    bmap_list = bmap_list.add( bmap ) 
-                else:
-                    print('relative orbit %i excluded: includes differing series lengths'%ron)
-            # mosaicking 3-band images   
-            cmaps = ee.ImageCollection(cmap_list).mosaic()
-    
-            bmap_list = bmap_list.map(trim_list)
-            
-            bmaps = ee.ImageCollection(bmap_list).mosaic().rename(uniquetimestamps[1:count])
-             
-            w_preview.disabled = False
-            w_export_ass.disabled = False
-            w_export_drv.disabled = False
-            #Display preview 
-            if len(rons)>0:
-                print( 'please wait for raster overlay ...' )
-                clear_layers()
-                S1 = collection.mosaic().select(0).visualize(min=-15, max=4)
-                m.add_layer(TileLayer(url=GetTileLayerUrl(S1),name='S1'))                          
-        except Exception as e:
-            print('Error: %s'%e) 
+            S1 = collection.mosaic().select(0).visualize(min=-15, max=4)
+            m.add_layer(TileLayer(url=GetTileLayerUrl(S1),name='S1'))                          
 
 w_collect.on_click(on_collect_button_clicked)                  
 
 def on_preview_button_clicked(b):
-    ''' Preview change maps
-    '''
+    ''' Preview change maps '''
     with w_out:  
         try:       
             jet = 'black,blue,cyan,yellow,red'
@@ -465,7 +342,7 @@ def on_preview_button_clicked(b):
                 palette = rcy
                 mx = 3     
             if not w_quick.value:
-                mp = mp.reproject(crs=archive_crs,scale=float(w_exportscale.value))
+                mp = mp.reproject(crs=crs,scale=float(w_exportscale.value))
             if w_maskwater.value==True:
                 mp = mp.updateMask(watermask) 
             if w_maskchange.value==True:   
@@ -473,15 +350,16 @@ def on_preview_button_clicked(b):
                     mp = mp.updateMask(mp.gte(w_minfreq.value))
                 else:
                     mp = mp.updateMask(mp.gt(0))    
-            m.add_layer(TileLayer(url=GetTileLayerUrl(mp.visualize(min=0, max=mx, opacity=w_opacity.value, palette=palette)),name=w_changemap.value))           
+            m.add_layer(TileLayer(url=GetTileLayerUrl(mp.visualize(min=0, max=mx,
+                                                                   opacity=w_opacity.value, 
+                                                                   palette=palette)),name=w_changemap.value))           
         except Exception as e:
             print('Error: %s'%e)
 
 w_preview.on_click(on_preview_button_clicked)      
 
 def on_review_button_clicked(b):
-    ''' Examine change maps exported to user's assets
-    ''' 
+    ''' Examine change maps exported to user's assets ''' 
     with w_out:  
         try: 
 #          test for existence of asset                  
@@ -540,8 +418,7 @@ def on_review_button_clicked(b):
 w_review.on_click(on_review_button_clicked)   
 
 def on_export_ass_button_clicked(b):
-    ''' Export to assets
-    '''
+    ''' Export to assets '''
     try:         
         assexport = ee.batch.Export.image.toAsset(ee.Image.cat(cmaps,bmaps).byte().clip(poly),
                                     description='assetExportTask', 
@@ -558,8 +435,7 @@ def on_export_ass_button_clicked(b):
 w_export_ass.on_click(on_export_ass_button_clicked)  
 
 def on_export_drv_button_clicked(b):
-    ''' Export to Google Drive
-    '''
+    ''' Export to Google Drive '''
     try:     
         cmaps = ee.Image.cat(cmaps,bmaps)  
         fileNamePrefix=w_exportdrivename.value.replace('/','-')            
@@ -578,7 +454,7 @@ def on_export_drv_button_clicked(b):
 w_export_drv.on_click(on_export_drv_button_clicked)            
 
 def on_plot_button_clicked(b):          
-#  plot change fractions        
+    ''' plot change fractions form asset '''       
     global bmap1 
     def plot_iter(current,prev):
         current = ee.Image.constant(current)
@@ -623,17 +499,14 @@ def on_plot_button_clicked(b):
     
 w_plot.on_click(on_plot_button_clicked)
 
-
-#@title Run the interface
 def run():
+    ''' Run the interface '''
     global m, center
     center = [51.0,6.4]
     osm = basemap_to_tiles(basemaps.OpenStreetMap.Mapnik)
     ews = basemap_to_tiles(basemaps.Esri.WorldStreetMap)
     ewi = basemap_to_tiles(basemaps.Esri.WorldImagery)
-    
-    mc = MeasureControl(position='topright',primary_length_unit = 'kilometers')
-    
+  
     dc = DrawControl(polyline={},circlemarker={})
     dc.rectangle = {"shapeOptions": {"fillColor": "#0000ff","color": "#0000ff","fillOpacity": 0.05}}
     dc.polygon = {"shapeOptions": {"fillColor": "#0000ff","color": "#0000ff","fillOpacity": 0.05}}
@@ -647,9 +520,11 @@ def run():
                     zoom=6, 
                     layout={'height':'500px','width':'800px'},
                     layers=(ewi,ews,osm),
-                    controls=(dc,lc,mc,fs))
+                    controls=(dc,lc,fs))
     with w_out:
         w_out.clear_output()
         print('Algorithm output') 
     display(m) 
-    return box      
+    
+    return box     
+ 
