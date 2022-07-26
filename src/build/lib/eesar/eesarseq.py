@@ -284,65 +284,45 @@ def assemble_and_run(aoi, median = True, significance = 0.01, startdate = '20180
             collection = collection.filter(ee.Filter.eq('relativeOrbitNumber_start', int(ron)))    
         count = collection.size().getInfo()     
         if count==0:
-            raise ValueError('No images found') 
-#        print('Images found: %i, platform: %s'%(count, platform))
-        
-        collection = collection.sort('system:time_start')                                                                      
-        
+            raise ValueError('No images found')        
+        collection = collection.sort('system:time_start')                                                                             
         rons = map( int, ee.List(collection.aggregate_array('relativeOrbitNumber_start')).getInfo() )
         rons = list(set(rons))
-        rons.sort()
-#        print('Relative orbit numbers: %s'%str(rons))
-        
+        rons.sort()        
         cmap_list = ee.List([])
-        bmap_list = ee.List([])
-        
+        bmap_list = ee.List([])        
         count = 500            
-        for ron in rons:
-           
-            collection_ron = collection.filter(ee.Filter.eq('relativeOrbitNumber_start', ron))
-            
+        for ron in rons:           
+            collection_ron = collection.filter(ee.Filter.eq('relativeOrbitNumber_start', ron))            
             timestamplist = get_timestamp_list(collection_ron)    
-
             ctr = Counter(timestamplist)    
             uniquetimestamps = list(set(timestamplist))
-            uniquetimestamps.sort() 
-            
-            orbit_lengths = [ctr[timestamp] for timestamp in uniquetimestamps]
-#            print('Orbit: %i, lengths %s'%(ron, str(orbit_lengths)))
-        
-            cList = collection_ron.map(get_vvvh).toList(500)   
- 
+            uniquetimestamps.sort()             
+            orbit_lengths = [ctr[timestamp] for timestamp in uniquetimestamps]        
+            cList = collection_ron.map(get_vvvh).toList(500)    
             # make list of combined (mosaicked) images along orbit path 
             mLen = ee.List(orbit_lengths) 
             first = ee.Dictionary({'plist': ee.List([]), 'clist': cList})  
             pList = ee.List(ee.Dictionary(mLen.iterate(make_mosaics, first)).get('plist'))
-
             first = ee.Dictionary({'imlist':ee.List([]),'enl':ee.Number(4.4),'aoi':aoi})        
-            imList = ee.List(ee.Dictionary(pList.iterate(clipList, first)).get('imlist'))   
-            
+            imList = ee.List(ee.Dictionary(pList.iterate(clipList, first)).get('imlist'))               
             # length of shortest time series so far
-            count = minimum(imList.size().getInfo(), count) 
-          
+            count = minimum(imList.size().getInfo(), count)           
             #Run the algorithm 
-            result = change_maps(imList, median, significance)
-            
+            result = change_maps(imList, median, significance)            
             smap = ee.Image(result.get('smap')).byte()
             cmap = ee.Image(result.get('cmap')).byte()
             fmap = ee.Image(result.get('fmap')).byte() 
             bmap = ee.Image(result.get('bmap')).byte()              
             cmap_list = cmap_list.add( ee.Image.cat(cmap,smap,fmap).rename(['cmap','smap','fmap']) ) 
-            bmap_list = bmap_list.add( bmap ) 
-                
+            bmap_list = bmap_list.add( bmap )                 
         # mosaic cmap, smap, fmap images   
         cmaps = ee.ImageCollection(cmap_list).mosaic()
         # truncate bitemporal maps to length of shortest series
         bmap_list = bmap_list.map(trim_list)
         # mosaic bitemporal maps 
-        bmaps = ee.ImageCollection(bmap_list).mosaic().rename(uniquetimestamps[1:count])
-         
-        return (cmaps, bmaps, count, rons, collection)   
-                
+        bmaps = ee.ImageCollection(bmap_list).mosaic().rename(uniquetimestamps[1:count])         
+        return (cmaps, bmaps, count, rons, collection)                  
     except Exception as e:
         print('Error: %s'%e) 
            

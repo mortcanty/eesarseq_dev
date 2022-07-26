@@ -286,7 +286,7 @@ def on_collect_button_clicked(b):
                                                   significance = w_significance.value, startdate=w_startdate.value, 
                                                   enddate=w_enddate.value, platform=w_platform.value, 
                                                   orbitpass=w_orbitpass.value, ron=w_relativeorbitnumber.value)
-#        archive_crs = ee.Image(collection.first()).select(0).projection().crs().getInfo()        
+        crs = ee.Image(collection.first()).select(0).projection().crs().getInfo()        
         w_preview.disabled = False
         w_export_ass.disabled = False
         w_export_drv.disabled = False
@@ -295,7 +295,7 @@ def on_collect_button_clicked(b):
             print('Relative orbit numbers: %s'%str(rons))
             print('Shortest orbit path series length: %i images\n please wait for raster overlay ...'%count)
             clear_layers()
-            S1 = collection.mosaic().select(0).visualize(min=-15, max=4)
+            S1 = collection.mean().select(0).visualize(min=-15, max=4)
             m.add_layer(TileLayer(url=GetTileLayerUrl(S1),name='S1'))                          
 
 w_collect.on_click(on_collect_button_clicked)                  
