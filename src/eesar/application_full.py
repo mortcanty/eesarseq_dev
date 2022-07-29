@@ -262,7 +262,7 @@ def handle_draw(self, action, geo_json):
     global aoi
     coords =  geo_json['geometry']['coordinates']
     if action == 'created':
-        aoi = coords
+        aoi = ee.Geometry.Polygon(coords)
         w_preview.disabled = True
         w_export_ass.disabled = True
         w_export_drv.disabled = True 
@@ -313,7 +313,6 @@ def on_preview_button_clicked(b):
                 mp = ee.Image(cmaps.select('smap')).byte()
                 if w_dw.value:
                     mp = mp.mask(mp.mask().And(maskDynamicWorld(dyn)))
-                
                 mx = count
                 print('Interval of first change:\n blue = early, red = late')
             elif w_changemap.value=='Last':
@@ -331,10 +330,10 @@ def on_preview_button_clicked(b):
             elif w_changemap.value == 'Bitemporal':
                 sel = int(w_interval.value)
                 sel = min(sel,count-1)
-                sel = max(sel,1)                               
+                sel = max(sel,1)       
+                mp = bmaps.select(sel-1)                        
                 print('Bitemporal for interval ending: %s'%mp.bandNames().getInfo())
-                print('red = positive definite, cyan = negative definite, yellow = indefinite')  
-                mp = bmaps.select(sel-1)
+                print('red = positive definite, cyan = negative definite, yellow = indefinite')                 
                 if w_dw.value:
                     mp = mp.mask(mp.mask().And(maskDynamicWorld(dyn)))
                 palette = rcy
@@ -417,7 +416,8 @@ w_review.on_click(on_review_button_clicked)
 
 def on_export_ass_button_clicked(b):
     ''' Export to assets '''
-    try:         
+    global aoi
+    try:       
         assexport = ee.batch.Export.image.toAsset(ee.Image.cat(cmaps,bmaps).byte().clip(aoi),
                                     description='assetExportTask', 
                                     pyramidingPolicy={".default": 'sample'},

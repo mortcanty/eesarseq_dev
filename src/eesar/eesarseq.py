@@ -1,5 +1,5 @@
-# eesarseq.py 
-# Utilities to assemble SAR time series and 
+# eesarseq.py
+# Utilities to assemble SAR time series and
 # run the sequential change detection algorithm
 # (c) Mort Canty, 2022
 
@@ -8,7 +8,8 @@ import math
 from collections import Counter
 
 import ee
-ee.Initialize
+import concurrent
+ee.Initialize()
 
 # *****************************************
 # The sequential change detection algorithm
@@ -37,7 +38,7 @@ def log_det(im_list, j):
 def pval(im_list, j, m=4.4):
     """Calculates -2logRj for im_list and returns P value and -2mlogRj."""
     im_list = ee.List(im_list)
-    j = ee.Number(j)    
+    j = ee.Number(j)
     m2logRj = (log_det_sum(im_list, j.subtract(1))
                .multiply(j.subtract(1))
                .add(log_det(im_list, j))
@@ -45,16 +46,16 @@ def pval(im_list, j, m=4.4):
                .subtract(ee.Number(2).multiply(j.subtract(1))
                .multiply(j.subtract(1).log()))
                .subtract(log_det_sum(im_list,j).multiply(j))
-               .multiply(-2).multiply(m))    
+               .multiply(-2).multiply(m))
     # correction to simple Wilks approximation
-    # pv = ee.Image.constant(1).subtract(chi2cdf(m2logRj, 2))    
+    # pv = ee.Image.constant(1).subtract(chi2cdf(m2logRj, 2))
     one= ee.Number(1)
     rhoj = one.subtract(one.add(one.divide(j.multiply(j.subtract(one)))).divide(6).divide(m))
-    omega2j = one.subtract(one.divide(rhoj)).pow(2.0).divide(-2)    
+    omega2j = one.subtract(one.divide(rhoj)).pow(2.0).divide(-2)
     rhojm2logRj = m2logRj.multiply(rhoj)
     pv = ee.Image.constant(1).subtract(chi2cdf(rhojm2logRj,2) \
                              .add(chi2cdf(rhojm2logRj,6).multiply(omega2j)) \
-                             .subtract(chi2cdf(rhojm2logRj,2).multiply(omega2j)))   
+                             .subtract(chi2cdf(rhojm2logRj,2).multiply(omega2j)))
     return (pv, m2logRj)
 
 def p_values(im_list,m=4.4):
@@ -82,14 +83,16 @@ def p_values(im_list,m=4.4):
         m2logQl = ee.ImageCollection(pv_m2logRj.aggregate_array('m2logRj')).sum()
 
         # correction to simple Wilks approximation
-        # pvQl = ee.Image.constant(1).subtract(chi2cdf(m2logQl, ell.subtract(1).multiply(2)))        
+        # pvQl = ee.Image.constant(1).subtract(chi2cdf(m2logQl, ell.subtract(1).multiply(2)))
         one = ee.Number(1)
         f = ell.subtract(1).multiply(2)
         rho = one.subtract(ell.divide(m).subtract(one.divide(ell.multiply(m))).divide(f).divide(3))
         omega2 = f.multiply(one.subtract(one.divide(rho)).pow(2)).divide(-4)
-        rhom2logQl = m2logQl.multiply(rho)   
-        pvQl = ee.Image.constant(1).subtract(chi2cdf(rhom2logQl,f).add(chi2cdf(rhom2logQl,f.add(4)).multiply(omega2)).subtract(chi2cdf(rhom2logQl,f).multiply(omega2)))                     
-        
+        rhom2logQl = m2logQl.multiply(rho)
+        pvQl = ee.Image.constant(1).subtract(chi2cdf(rhom2logQl,f) \
+                                             .add(chi2cdf(rhom2logQl,f.add(4)).multiply(omega2)) \
+                                             .subtract(chi2cdf(rhom2logQl,f).multiply(omega2)))
+
         pvs = ee.List(pv_m2logRj.aggregate_array('pv')).add(pvQl)
         return pvs
 
@@ -152,7 +155,7 @@ def filter_i(current, prev):
     return ee.Dictionary({'i': i.add(1), 'alpha': alpha, 'median': median,
                           'cmap': result.get('cmap'), 'smap': result.get('smap'),
                           'fmap': result.get('fmap'), 'bmap': result.get('bmap')})
-    
+
 def dmap_iter(current, prev):
     """Reclassifies values in directional change maps."""
     prev = ee.Dictionary(prev)
@@ -209,50 +212,51 @@ def getS1collection(aoi, orbitpass, startdate, enddate):
                       .filter(ee.Filter.eq('transmitterReceiverPolarisation', ['VV', 'VH'])) \
                       .filter(ee.Filter.eq('resolution_meters', 10)) \
                       .filter(ee.Filter.eq('instrumentMode', 'IW')) \
-                      .filter(ee.Filter.eq('orbitProperties_pass', orbitpass)) 
-                      
-def get_vvvh(image):   
-    ''' get 'VV' and 'VH' bands from sentinel-1 imageCollection and restore linear signal from db-values '''
-    return image.select('VV','VH').multiply(ee.Image.constant(math.log(10.0)/10.0)).exp()                          
+                      .filter(ee.Filter.eq('orbitProperties_pass', orbitpass))
 
-def minimum(a, b):      
+def get_vvvh(image):
+    ''' get 'VV' and 'VH' bands from sentinel-1 imageCollection
+    and restore linear signal from db-values '''
+    return image.select('VV','VH').multiply(ee.Image.constant(math.log(10.0)/10.0)).exp()
+
+def minimum(a, b):
     if a <= b:
         return a
     else:
         return b
 
 def get_timestamp_list(collection):
-    ''' make timestamps from image collection in YYYYMMDD format '''   
+    ''' make timestamps from image collection in YYYYMMDD format '''
     acquisition_times = ee.List(collection.aggregate_array('system:time_start')).getInfo()
     tsl = []
     for timestamp in acquisition_times:
         tmp = time.gmtime(int(timestamp)/1000)
-        tsl.append(time.strftime('%x', tmp))        
-    tsl= [x.replace('/','') for x in tsl]  
-    tsl = ['T20' + x[4:] + x[0:4] for x in tsl]         
+        tsl.append(time.strftime('%x', tmp))
+    tsl= [x.replace('/','') for x in tsl]
+    tsl = ['T20' + x[4:] + x[0:4] for x in tsl]
     return tsl
 
 def clipList(current,prev):
     ''' clip a list of images and multiply by ENL'''
     imlist = ee.List(ee.Dictionary(prev).get('imlist'))
-    aoi = ee.Dictionary(prev).get('aoi') 
-    enl = ee.Number(ee.Dictionary(prev).get('enl')) 
+    aoi = ee.Dictionary(prev).get('aoi')
+    enl = ee.Number(ee.Dictionary(prev).get('enl'))
     imlist = imlist.add(ee.Image(current).multiply(enl).clip(aoi))
     return ee.Dictionary({'imlist': imlist,'aoi': aoi,'enl': enl})
-        
-        
+
+
 def make_mosaics(current, prev):
     ''' return equitemporal mosaicked images in plist '''
     mLen = ee.List(current)
     prev = ee.Dictionary(prev)
     pList = ee.List(prev.get('plist'))
-    cList = ee.List(prev.get('clist'))   
-    pList = pList.add( ee.ImageCollection(cList.slice(0, mLen)).mosaic() )    
+    cList = ee.List(prev.get('clist'))
+    pList = pList.add( ee.ImageCollection(cList.slice(0, mLen)).mosaic() )
     return ee.Dictionary({'plist':pList, 'clist':cList.slice(mLen)})
 
-def assemble_and_run(aoi, median = True, significance = 0.01, startdate = '20180101', 
-                     enddate = '20190101', platform='A', orbitpass='DESCENDING', ron=0):   
-    ''' 
+def assemble_and_run(aoi, median = True, significance = 0.01, startdate = '20180101',
+                     enddate = '20190101', platform='A', orbitpass='DESCENDING', ron=0):
+    '''
     *** Collect a time series from all intersecting orbit paths and invoke algorithm ***
     Input:
     aoi          <list>     polygon region of interest
@@ -269,62 +273,66 @@ def assemble_and_run(aoi, median = True, significance = 0.01, startdate = '20180
     count        <int>                length of time series
     rons         <list>               relative orbit numbers used
     collection   <ee.ImageCollection> the filtered image collection
-    '''   
-    def trim_list(current): 
+    '''
+    def trim_list(current):
         current = ee.Image(current)
         bns = current.bandNames().slice(0, count-1)
         return current.select(ee.List.sequence(0, count-2), bns)
     
     try:
-        aoi = ee.Geometry.Polygon(aoi)
-        collection = getS1collection(aoi, orbitpass, startdate, enddate)          
+        collection = getS1collection(aoi, orbitpass, startdate, enddate)   
         if platform != 'Both':
             collection = collection.filter(ee.Filter.eq('platform_number', platform))
         if ron > 0:
-            collection = collection.filter(ee.Filter.eq('relativeOrbitNumber_start', int(ron)))    
-        count = collection.size().getInfo()     
+            collection = collection.filter(ee.Filter.eq('relativeOrbitNumber_start', int(ron)))
+        count = collection.size().getInfo()
         if count==0:
-            raise ValueError('No images found')        
-        collection = collection.sort('system:time_start')                                                                             
-        rons = map( int, ee.List(collection.aggregate_array('relativeOrbitNumber_start')).getInfo() )
+            raise ValueError('No images found')
+        collection = collection.sort('system:time_start')
+        rons = map( int, ee.List(collection.aggregate_array('relativeOrbitNumber_start')) \
+                    .getInfo() )
         rons = list(set(rons))
-        rons.sort()        
+        rons.sort()
         cmap_list = ee.List([])
-        bmap_list = ee.List([])        
-        count = 500            
-        for ron in rons:           
-            collection_ron = collection.filter(ee.Filter.eq('relativeOrbitNumber_start', ron))            
-            timestamplist = get_timestamp_list(collection_ron)    
-            ctr = Counter(timestamplist)    
+        bmap_list = ee.List([])
+        count = 500
+        for ron in rons:
+            # filter for relative orbit number
+            collection_ron = collection.filter(ee.Filter.eq('relativeOrbitNumber_start', ron))
+            # determine timestamps for the orbit
+            timestamplist = get_timestamp_list(collection_ron)
+            ctr = Counter(timestamplist)
             uniquetimestamps = list(set(timestamplist))
-            uniquetimestamps.sort()             
-            orbit_lengths = [ctr[timestamp] for timestamp in uniquetimestamps]        
-            cList = collection_ron.map(get_vvvh).toList(500)    
-            # make list of combined (mosaicked) images along orbit path 
-            mLen = ee.List(orbit_lengths) 
-            first = ee.Dictionary({'plist': ee.List([]), 'clist': cList})  
-            pList = ee.List(ee.Dictionary(mLen.iterate(make_mosaics, first)).get('plist'))
-            first = ee.Dictionary({'imlist':ee.List([]),'enl':ee.Number(4.4),'aoi':aoi})        
-            imList = ee.List(ee.Dictionary(pList.iterate(clipList, first)).get('imlist'))               
+            uniquetimestamps.sort()
+            # get orbit path lengths for each observation time (should all be same)
+            # the path length determines the number of swaths which are to be mosaicked
+            orbit_lengths = ee.List( [ctr[timestamp] for timestamp in uniquetimestamps] )
+            # get list of all swaths for the present orbit number
+            cList = collection_ron.map(get_vvvh).toList(500)
+            # make list of combined (mosaicked) images along orbit path
+            first = ee.Dictionary({'plist': ee.List([]), 'clist': cList})
+            pList = ee.List(ee.Dictionary(orbit_lengths.iterate(make_mosaics, first)).get('plist'))
+            first = ee.Dictionary({'imlist':ee.List([]),'enl':ee.Number(4.4),'aoi':aoi})
+            imList = ee.List(ee.Dictionary(pList.iterate(clipList, first)).get('imlist'))
             # length of shortest time series so far
-            count = minimum(imList.size().getInfo(), count)           
-            #Run the algorithm 
-            result = change_maps(imList, median, significance)            
+            count = minimum(imList.size().getInfo(), count)
+            # run the algorithm for this relative orbit
+            result = change_maps(imList, median, significance)
             smap = ee.Image(result.get('smap')).byte()
             cmap = ee.Image(result.get('cmap')).byte()
-            fmap = ee.Image(result.get('fmap')).byte() 
-            bmap = ee.Image(result.get('bmap')).byte()              
-            cmap_list = cmap_list.add( ee.Image.cat(cmap,smap,fmap).rename(['cmap','smap','fmap']) ) 
-            bmap_list = bmap_list.add( bmap )                 
-        # mosaic cmap, smap, fmap images   
-        cmaps = ee.ImageCollection(cmap_list).mosaic()
+            fmap = ee.Image(result.get('fmap')).byte()
+            bmap = ee.Image(result.get('bmap')).byte()
+            cmap_list = cmap_list.add( ee.Image.cat(cmap,smap,fmap).rename(['cmap','smap','fmap']) )
+            bmap_list = bmap_list.add( bmap )
+        # buffer and mosaic cmap, smap, fmap images
+        cmaps = ee.ImageCollection.fromImages(cmap_list).mosaic()
         # truncate bitemporal maps to length of shortest series
         bmap_list = bmap_list.map(trim_list)
-        # mosaic bitemporal maps 
-        bmaps = ee.ImageCollection(bmap_list).mosaic().rename(uniquetimestamps[1:count])         
-        return (cmaps, bmaps, count, rons, collection)                  
+        # mosaick the bitemporal maps labeling bands with most recent timestamp list 
+        bmaps = ee.ImageCollection(bmap_list).mosaic().rename(uniquetimestamps[1:count])
+        return (cmaps, bmaps, count, rons, collection)
     except Exception as e:
-        print('Error: %s'%e) 
-           
+        print('Error: %s'%e)
+
 if __name__ == '__main__':
     pass
