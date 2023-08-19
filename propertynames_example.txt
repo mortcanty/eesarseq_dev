@@ -1,0 +1,58 @@
+system:id : COPERNICUS/S1_GRD/S1A_IW_GRDH_1SDV_20180405T172429_20180405T172454_021335_024B73_DBA1
+GRD_Post_Processing_start : 1522957512500
+sliceNumber : 14
+GRD_Post_Processing_facility_name : Copernicus S1 Core Ground Segment - DPA
+resolution : H
+SLC_Processing_facility_name : Copernicus S1 Core Ground Segment - DPA
+system:footprint : {'type': 'LinearRing', 'coordinates': [[5.255076773813733, 51.55626457828986], [4.727883273781254, 51.494498783925664], [4.042220369586789, 51.410364131170866], [4.10579712128755, 51.19654973169768], [4.153164089124801, 51.05035374314263], [4.162927157553014, 51.020476841594025], [4.247526610262844, 50.762136562150545], [4.368025017943468, 50.3911506468563], [4.467767581474408, 50.079877062768226], [4.484733740906209, 50.029136491026534], [4.524391213446892, 49.91652971130993], [7.981586729765295, 50.30583252512224], [7.981536019417649, 50.30820921185226], [7.96545587697489, 50.38901686393623], [7.926917986294371, 50.5629649865392], [7.786106313441143, 51.144607821155034], [7.6207007015386665, 51.80251968730089], [7.214901097046232, 51.763839856873616], [6.573327096572058, 51.69968763886808], [5.957205073834404, 51.63460668003711], [5.255076773813733, 51.55626457828986]]}
+familyName : SENTINEL-1
+system:version : 1649013247291675
+segmentStartTime : 1522948741250
+system:bands : {'VV': {'data_type': {'type': 'PixelType', 'precision': 'double'}, 'dimensions': [29552, 22275], 'crs': 'EPSG:32632', 'crs_transform': [10, 0, 138238.01574328664, 0, -10, 5751505.166095922]}, 'VH': {'data_type': {'type': 'PixelType', 'precision': 'double'}, 'dimensions': [29552, 22275], 'crs': 'EPSG:32632', 'crs_transform': [10, 0, 138238.01574328664, 0, -10, 5751505.166095922]}, 'angle': {'data_type': {'type': 'PixelType', 'precision': 'float'}, 'dimensions': [21, 10], 'crs': 'EPSG:32632', 'crs_transform': [12918.885678350634, -3061.3045615769224, 173409.7766251326, 1775.7856268025935, 20151.402030841447, 5538226.637772525]}}
+missionDataTakeID : 150387
+GRD_Post_Processing_facility_country : Germany
+nssdcIdentifier : 2014-016A
+productClass : S
+phaseIdentifier : 1
+orbitProperties_pass : ASCENDING
+relativeOrbitNumber_stop : 88
+SLC_Processing_facility_site : DLR-Oberpfaffenhofen
+GRD_Post_Processing_stop : 1522958168000
+system:time_start : 1522949069000
+instrumentMode : IW
+totalSlices : 17
+SLC_Processing_stop : 1522957950000
+startTimeANX : 816431.4
+SLC_Processing_start : 1522957623000
+resolution_meters : 10
+instrumentSwath : IW
+relativeOrbitNumber_start : 88
+productTimelinessCategory : Fast-24h
+SLC_Processing_software_name : Sentinel-1 IPF
+sliceProductFlag : true
+S1TBX_Calibration_vers : 6.0.4
+orbitNumber_start : 21335
+GRD_Post_Processing_facility_site : DLR-Oberpfaffenhofen
+instrument : Synthetic Aperture Radar
+GRD_Post_Processing_software_name : Sentinel-1 IPF
+platform_number : A
+S1TBX_SAR_Processing_vers : 6.0.4
+productType : GRD
+orbitProperties_ascendingNodeTime : 1522948253520
+stopTimeANX : 841429.6
+productComposition : Slice
+productClassDescription : SAR Standard L1 Product
+GRD_Post_Processing_software_version : 002.90
+SLC_Processing_software_version : 002.90
+orbitNumber_stop : 21335
+instrumentConfigurationID : 6
+system:asset_size : 4059043625
+cycleNumber : 136
+system:index : S1A_IW_GRDH_1SDV_20180405T172429_20180405T172454_021335_024B73_DBA1
+SNAP_Graph_Processing_Framework_GPF_vers : 6.0.4
+SLC_Processing_facility_org : ESA
+SLC_Processing_facility_country : Germany
+GRD_Post_Processing_facility_org : ESA
+transmitterReceiverPolarisation : ['VV', 'VH']
+system:band_names : ['VV', 'VH', 'angle']
+Images found: 33, platform: Both

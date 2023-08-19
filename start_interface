@@ -1,0 +1,4 @@
+source /home/mort/venv310/bin/activate
+cd src
+python setup.py install
+jupyter lab --no-browser --ip=0.0.0.0 --allow-root --NotebookApp.token=''

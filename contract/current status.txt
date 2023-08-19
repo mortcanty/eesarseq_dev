@@ -1,0 +1,51 @@
+= Quick overview of the history and development of the CD methodology
+   
+   - 2003 the original bitemporal algorithm (DTU)  (Conradsen, Nielsen, Skriver, Schou, Skriver)
+   
+      - multilook full quad pol covariance matrices
+      
+      - complex Wishart distribution of observations => likelihood ratio (LR) hypothesis testing 
+                                                           
+      - verified with EMISAR aereal data
+
+     - MatLab software available on Allan Nielsen‘s home page
+                                                         
+   - 2016 multitemporal algorithm
+   
+       - series of statistically independent LR tests to subsequences to determine times of change
+
+       - (later) complete characterization of the block diagonal case (important for Sentinel-1)
+
+       -  (later) application to satellite imagery (RadarSat-2 time series, comparison of Python and MatLab)
+
+   - 2019  Loewner order definition for direction of change
+   
+   - after 2018 Series of papers (and tutorials) on applications with Google Earth Engine
+   
+       - nuclear site monitoring
+   
+       - Adaptive temporal filtering
+       
+       - Forest extent monitoring (in preparation) 
+       
+    - Software available: 
+    
+               MatLab (DTU website)
+               
+               Ordinary Python (GitHub repo accompanying my 2019 textbook)
+               
+               GEE Python API, Jupyter/Colab notebooks, Widget interface, Docker images (GitHub, DockerHub) 
+               
+               GEE JavaScript API (code editor)     
+               
+    -  Performance (GEE Python API version)
+    
+               full S1 swaths (approx 250x250 km²), ~ 20 images: ~ 1 hour as export task
+               
+               looking at single relative orbit tracks, e.g., North Sea to Switzerland, about 6 hours
+       
+
+
+
+
+  
