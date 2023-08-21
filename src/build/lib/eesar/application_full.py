@@ -31,8 +31,8 @@ dyn = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1') \
                     .filterDate('2021-09-01', '2022-03-30') \
                     .select('label').mosaic()
 
-def maskCrops(image): 
-    return image.where(dyn.eq(4),0)
+def maskDynamicWorld(image): 
+    return image.eq(ee.Image.constant(6)) # Built 
 
 watermask = ee.Image('UMD/hansen/global_forest_change_2015').select('datamask').eq(1)
 
@@ -95,7 +95,7 @@ w_relativeorbitnumber = widgets.IntText(
 )
 w_exportassetsname = widgets.Text(
     layout = widgets.Layout(width='200px'),
-    value='projects/ee-mortcanty/assets/dev/',
+    value='projects/ee-mortcanty/assets/contract/',
     placeholder=' ',
     disabled=False
 )
@@ -155,16 +155,18 @@ w_maskwater = widgets.Checkbox(
     description='WaterMask',
     disabled=False
 )
-w_stride = widgets.BoundedIntText(
-    value=1,
-    min=1,
-    description='Stride:',
+w_opacity = widgets.BoundedFloatText(
     layout = widgets.Layout(width='200px'),
+    value='1.0',
+    min=0.0,
+    max=1.0,
+    step=0.1,
+    description='Opacity:',
     disabled=False
 )
 w_dw = widgets.Checkbox(
     value=False,
-    description='Crops Mask',
+    description='DW Mask',
     disabled=False
 )
 w_out = widgets.Output(
@@ -178,11 +180,11 @@ w_review = widgets.Button(description="ReviewAsset",disabled=False)
 w_goto = widgets.Button(description='GoTo',disabled=False)
 w_export_ass = widgets.Button(description='ExportToAssets',disabled=True)
 w_export_drv = widgets.Button(description='ExportToDrive',disabled=True)
-w_assetplot = widgets.Button(description='PlotAsset',disabled=False)
+w_plot = widgets.Button(description='PlotAsset',disabled=False)
 
 w_masks = widgets.VBox([w_maskchange,w_maskwater,w_dw,w_quick])
 w_dates = widgets.VBox([w_startdate,w_enddate])
-w_assets = widgets.VBox([w_review,w_assetplot,w_reset])
+w_assets = widgets.VBox([w_review,w_plot,w_reset])
 w_bmap = widgets.VBox([w_interval,w_maxfreq,w_minfreq])
 w_export = widgets.VBox([widgets.HBox([w_export_ass,w_exportassetsname]),
                          widgets.HBox([w_export_drv,w_exportdrivename])])
@@ -191,7 +193,7 @@ w_signif = widgets.VBox([w_significance,w_median])
 #Assemble the interface
 
 row1 = widgets.HBox([w_platform,w_orbitpass,w_relativeorbitnumber,w_dates])
-row2 = widgets.HBox([w_collect,w_signif,w_stride,w_export])
+row2 = widgets.HBox([w_collect,w_signif,w_opacity,w_export])
 row3 = widgets.HBox([w_preview,w_changemap,w_bmap,w_masks,w_assets])
 row4 = widgets.HBox([w_out,w_goto,w_location])
 
@@ -271,51 +273,9 @@ def handle_draw(self, action, geo_json):
     elif action == 'deleted':
         aoi = None
         w_collect.disabled = True  
-        w_preview.disabled = True   
+        w_preview.disabled = True    
         w_export_ass.disabled = True
         w_export_drv.disabled = True      
-        
-def plot_bmap(image):
-    ''' plot change fractions from asset bmap bands '''       
-    def plot_iter(current,prev):
-        current = ee.Image.constant(current)
-        plots = ee.List(prev) 
-        res = bmap1.multiply(0) \
-                  .where(bmap1.eq(current),1) \
-                  .reduceRegion(ee.Reducer.mean(),scale=10,maxPixels=10e10)
-        return ee.List(plots.add(res))
-    with w_out:
-        try:
-            w_out.clear_output()            
-            print('Change fraction plots ...')                
-            k = image.bandNames().length().subtract(3).getInfo()            
-            bmap1 = image.select(ee.List.sequence(3,k+2)).clip(aoi)          
-            if w_maskwater.value:
-                bmap1 = bmap1.updateMask(watermask) 
-            plots = ee.List(ee.List([1,2,3]).iterate(plot_iter,ee.List([]))).getInfo()           
-            bns = np.array(list([s[3:9] for s in list(plots[0].keys())])) 
-            x = range(1,k+1)  
-            _ = plt.figure(figsize=(10,5))
-            plt.plot(x,list(plots[0].values()),'ro-',label='posdef')
-            plt.plot(x,list(plots[1].values()),'co-',label='negdef')
-            plt.plot(x,list(plots[2].values()),'yo-',label='indef')        
-            ticks = range(0,k+2)
-            labels = [str(i) for i in range(0,k+2)]
-            labels[0] = ' '
-            labels[-1] = ' '
-            labels[1:-1] = bns 
-            if k>50:
-                for i in range(1,k+1,2):
-                    labels[i] = ''
-            plt.xticks(ticks,labels,rotation=90)
-            plt.legend()
-#            fn = w_exportassetsname.value.replace('/','-')+'.png'
-#            plt.savefig(fn,bbox_inches='tight') 
-            w_out.clear_output()
-            plt.show()
-#            print('Saved to ~/%s'%fn)
-        except Exception as e:
-            print('Error: %s'%e)                           
     
 def on_collect_button_clicked(b):
     ''' Collect a time series from the archive '''
@@ -325,9 +285,9 @@ def on_collect_button_clicked(b):
         clear_layers()
         print('Running on GEE archive COPERNICUS/S1_GRD')
         #assemble time series and run the algorithm
-        cmaps, bmaps, count, rons, collection, atsf, _, _ = assemble_and_run(aoi, median = w_median.value, 
-                                                  significance = w_significance.value, startdate=w_startdate.value, 
-                                                  enddate=w_enddate.value, platform=w_platform.value, stride= w_stride.value,
+        cmaps, bmaps, count, rons, collection, atsf, _, _ = assemble_and_run(aoi, median=w_median.value,
+                                                  significance =w_significance.value, startdate=w_startdate.value,
+                                                  enddate=w_enddate.value, platform=w_platform.value, 
                                                   orbitpass=w_orbitpass.value, ron=w_relativeorbitnumber.value)
         crs = ee.Image(collection.first()).select(0).projection().crs().getInfo()        
         w_preview.disabled = False
@@ -356,14 +316,20 @@ def on_preview_button_clicked(b):
             print('Shortest orbit path series length: %i images\n previewing please wait for raster overlay ...'%count)
             if w_changemap.value=='First':
                 mp = ee.Image(cmaps.select('smap')).byte()
+                if w_dw.value:
+                    mp = mp.mask(mp.mask().And(maskDynamicWorld(dyn)))
                 mx = count
                 print('Interval of first change:\n blue = early, red = late')
             elif w_changemap.value=='Last':
                 mp=ee.Image(cmaps.select('cmap')).byte()
+                if w_dw.value:
+                    mp = mp.mask(mp.mask().And(maskDynamicWorld(dyn)))
                 mx = count
                 print('Interval of last change:\n blue = early, red = late')
             elif w_changemap.value=='Frequency':
                 mp = ee.Image(cmaps.select('fmap')).byte()
+                if w_dw.value:
+                    mp = mp.mask(mp.mask().And(maskDynamicWorld(dyn)))
                 mx = w_maxfreq.value
                 print('Change frequency :\n blue = few, red = many')
             elif w_changemap.value == 'Bitemporal':
@@ -373,6 +339,8 @@ def on_preview_button_clicked(b):
                 mp = bmaps.select(sel-1)                        
                 print('Bitemporal for interval ending: %s'%mp.bandNames().getInfo())
                 print('red = positive definite, cyan = negative definite, yellow = indefinite')                 
+                if w_dw.value:
+                    mp = mp.mask(mp.mask().And(maskDynamicWorld(dyn)))
                 palette = rcy
                 mx = 3   
             elif w_changemap.value=='ATSF':
@@ -384,8 +352,6 @@ def on_preview_button_clicked(b):
                 print( 'ATSF' )   
             if not w_quick.value:
                 mp = mp.reproject(crs=crs,scale=float(w_exportscale.value))
-            if w_dw.value:
-                mp = maskCrops(mp)
             if w_maskwater.value==True:
                 mp = mp.updateMask(watermask) 
             if w_maskchange.value==True:   
@@ -396,6 +362,7 @@ def on_preview_button_clicked(b):
                 else:
                     mp = mp.updateMask(mp.gt(0))    
             m.add_layer(TileLayer(url=GetTileLayerUrl(mp.visualize(min=mn, max=mx,
+                                                                   opacity=w_opacity.value, 
                                                                    palette=palette)),name=w_changemap.value))                       
         except Exception as e:
             print('Error: %s'%e)
@@ -428,6 +395,8 @@ def on_review_button_clicked(b):
             print('Series length: %i images, reviewing (please wait for raster overlay) ...'%(count+1))
             if w_changemap.value=='First':
                 mp = smap
+                if w_dw.value:
+                    mp = mp.mask(mp.mask().And(maskDynamicWorld(dyn)))      
                 mn = 0          
                 mx = count
                 print('Interval of first change:\n blue = early, red = late')
@@ -438,6 +407,8 @@ def on_review_button_clicked(b):
                 print('Interval of last change:\n blue = early, red = late')
             elif w_changemap.value=='Frequency':
                 mp = fmap
+                if w_dw.value:
+                    mp = mp.mask(mp.mask().And(maskDynamicWorld(dyn)))
                 mn = 0
                 mx = w_maxfreq.value
                 print('Change frequency :\n blue = few, red = many')
@@ -447,7 +418,9 @@ def on_review_button_clicked(b):
                 sel = max(sel,1)
                 print('Bitemporal: interval %i'%w_interval.value)
                 print('red = positive definite, cyan = negative definite, yellow = indefinite')  
-                mp = bmap.select(sel-1)              
+                mp = bmap.select(sel-1)
+                if w_dw.value:
+                    mp = mp.mask(mp.mask().And(maskDynamicWorld(dyn)))                    
                 palette = rcy
                 mn = 0
                 mx = 3     
@@ -455,15 +428,12 @@ def on_review_button_clicked(b):
                 raise RuntimeError('ATSF not available')
             if w_maskwater.value==True:
                 mp = mp.updateMask(watermask) 
-            if w_dw.value:
-                mp = maskCrops(mp)
             if w_maskchange.value==True:   
                 if w_changemap.value=='Frequency':
                     mp = mp.updateMask(mp.gte(w_minfreq.value)) 
                 else:
                     mp = mp.updateMask(mp.gt(0))    
-            m.add_layer(TileLayer(url=GetTileLayerUrl(mp.visualize(min=mn, max=mx,
-                                         palette=palette)),name=w_changemap.value))
+            m.add_layer(TileLayer(url=GetTileLayerUrl(mp.visualize(min=mn, max=mx, opacity=w_opacity.value, palette=palette)),name=w_changemap.value))
         except Exception as e:
             print('Error: %s'%e)
     
@@ -513,12 +483,51 @@ def on_export_drv_button_clicked(b):
 
 w_export_drv.on_click(on_export_drv_button_clicked)            
 
-def on_assetplot_button_clicked(b):          
-    ''' plot change fractions from asset '''    
+def on_plot_button_clicked(b):          
+    ''' plot change fractions form asset '''       
+    global bmap1 
+    def plot_iter(current,prev):
+        current = ee.Image.constant(current)
+        plots = ee.List(prev) 
+        res = bmap1.multiply(0) \
+                  .where(bmap1.eq(current),1) \
+                  .reduceRegion(ee.Reducer.mean(),scale=10,maxPixels=10e10)
+        return ee.List(plots.add(res))
+    with w_out:
+        try:
+            w_out.clear_output()            
+            print('Change fraction plots ...')                  
+            assetImage = ee.Image(w_exportassetsname.value)
+            k = assetImage.bandNames().length().subtract(3).getInfo()            
+            bmap1 = assetImage.select(ee.List.sequence(3,k+2)).clip(aoi)            
+            if w_maskwater.value:
+                bmap1 = bmap1.updateMask(watermask) 
+            plots = ee.List(ee.List([1,2,3]).iterate(plot_iter,ee.List([]))).getInfo()           
+            bns = np.array(list([s[3:9] for s in list(plots[0].keys())])) 
+            x = range(1,k+1)  
+            _ = plt.figure(figsize=(10,5))
+            plt.plot(x,list(plots[0].values()),'ro-',label='posdef')
+            plt.plot(x,list(plots[1].values()),'co-',label='negdef')
+            plt.plot(x,list(plots[2].values()),'yo-',label='indef')        
+            ticks = range(0,k+2)
+            labels = [str(i) for i in range(0,k+2)]
+            labels[0] = ' '
+            labels[-1] = ' '
+            labels[1:-1] = bns 
+            if k>50:
+                for i in range(1,k+1,2):
+                    labels[i] = ''
+            plt.xticks(ticks,labels,rotation=90)
+            plt.legend()
+#            fn = w_exportassetsname.value.replace('/','-')+'.png'
+#            plt.savefig(fn,bbox_inches='tight') 
+            w_out.clear_output()
+            plt.show()
+#            print('Saved to ~/%s'%fn)
+        except Exception as e:
+            print('Error: %s'%e)               
     
-    plot_bmap(ee.Image(w_exportassetsname.value))  
-    
-w_assetplot.on_click(on_assetplot_button_clicked)
+w_plot.on_click(on_plot_button_clicked)
 
 def run():
     ''' Run the interface '''
@@ -550,3 +559,4 @@ def run():
     display(m) 
     
     return box     
+ 

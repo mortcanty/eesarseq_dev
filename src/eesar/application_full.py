@@ -285,8 +285,8 @@ def on_collect_button_clicked(b):
         clear_layers()
         print('Running on GEE archive COPERNICUS/S1_GRD')
         #assemble time series and run the algorithm
-        cmaps, bmaps, count, rons, collection, atsf, _, _ = assemble_and_run(aoi, median = w_median.value, 
-                                                  significance = w_significance.value, startdate=w_startdate.value, 
+        cmaps, bmaps, count, rons, collection, atsf, _, _ = assemble_and_run(aoi, median=w_median.value,
+                                                  significance =w_significance.value, startdate=w_startdate.value,
                                                   enddate=w_enddate.value, platform=w_platform.value, 
                                                   orbitpass=w_orbitpass.value, ron=w_relativeorbitnumber.value)
         crs = ee.Image(collection.first()).select(0).projection().crs().getInfo()        
