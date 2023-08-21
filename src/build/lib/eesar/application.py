@@ -95,7 +95,7 @@ w_relativeorbitnumber = widgets.IntText(
 )
 w_exportassetsname = widgets.Text(
     layout = widgets.Layout(width='200px'),
-    value='projects/ee-mortcanty/assets/dev/',
+    value='projects/<your-project>/assets/',
     placeholder=' ',
     disabled=False
 )
