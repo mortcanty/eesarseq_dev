@@ -54,29 +54,35 @@ w_orbitpass = widgets.RadioButtons(
     disabled=False
 )
 w_changemap = widgets.RadioButtons(
-    options=['Bitemporal', 'First', 'Last', 'Frequency', 'Plot', 'ATSF', 'S2'],
+    options=['Bitemp', 'First', 'Last', 'Frequency', 'Plot', 'ATSF', 'S2'],
     value='First',
+    layout = widgets.Layout(width='200px'),
+    disabled=False
+)
+w_changetype = widgets.RadioButtons(
+    options=['PosDef', 'NegDef', 'InDef', 'All'],
+    value='All',
     layout = widgets.Layout(width='200px'),
     disabled=False
 )
 w_interval = widgets.BoundedIntText(
     min=1,
     value=1,
-    layout = widgets.Layout(width='150px'),
-    description='Interval:',
+    layout = widgets.Layout(width='200px'),
+    description='BitempInt:',
     disabled=True
 )
 w_maxfreq = widgets.BoundedIntText(
     min=1,
     value=20,
-    layout = widgets.Layout(width='150px'),
+    layout = widgets.Layout(width='200px'),
     description='MaxFreq:',
     disabled=True
 )
 w_minfreq = widgets.BoundedIntText(
     min=1,
     value=1,
-    layout = widgets.Layout(width='150px'),
+    layout = widgets.Layout(width='200px'),
     description='MinFreq:',
     disabled=True
 )
@@ -190,7 +196,7 @@ w_signif = widgets.VBox([w_significance,w_median])
 
 row1 = widgets.HBox([w_platform,w_orbitpass,w_relativeorbitnumber,w_dates])
 row2 = widgets.HBox([w_collect,w_signif,w_stride,w_export])
-row3 = widgets.HBox([widgets.VBox([w_preview,w_review]),w_changemap,w_bmap,w_masks,w_reset])
+row3 = widgets.HBox([widgets.VBox([w_preview,w_review,w_reset]),w_changemap,w_bmap,w_masks])
 row4 = widgets.HBox([w_out,w_goto,w_location])
 
 box = widgets.VBox([row1,row2,row3,row4])
