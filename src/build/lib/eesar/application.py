@@ -59,12 +59,6 @@ w_changemap = widgets.RadioButtons(
     layout = widgets.Layout(width='200px'),
     disabled=False
 )
-w_changetype = widgets.RadioButtons(
-    options=['PosDef', 'NegDef', 'InDef', 'All'],
-    value='All',
-    layout = widgets.Layout(width='200px'),
-    disabled=False
-)
 w_interval = widgets.BoundedIntText(
     min=1,
     value=1,
