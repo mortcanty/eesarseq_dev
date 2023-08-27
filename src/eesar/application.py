@@ -371,7 +371,7 @@ def on_preview_button_clicked(b):
                 mp = ee.Image(cmaps.select('fmap')).byte()
                 mx = w_maxfreq.value
                 print('Change frequency :\n blue = few, red = many')
-            elif w_changemap.value == 'Bitemporal':
+            elif w_changemap.value == 'Bitemp':
                 sel = int(w_interval.value)
                 sel = min(sel,count-1)
                 sel = max(sel,1)       
