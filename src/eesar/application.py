@@ -203,10 +203,10 @@ def on_widget_change(b):
     w_export_drv.disabled = True
     
 def on_changemap_widget_change(b):   
-    if b['new']=='Bitemporal':
+    if b['new'] == 'Bitemp':
         w_interval.disabled=False
     else:
-        w_interval.disabled=True    
+        w_interval.disabled=True
     if b['new']=='Frequency':
         w_maxfreq.disabled=False
         w_minfreq.disabled=False
