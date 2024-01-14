@@ -11,7 +11,6 @@ import numpy as np
 import ipywidgets as widgets
 from IPython.display import display
 from ipyleaflet import (Map,DrawControl,TileLayer,
-                        MeasureControl,
                         FullScreenControl,
                         basemaps,basemap_to_tiles,
                         LayersControl)
@@ -54,7 +53,7 @@ w_orbitpass = widgets.RadioButtons(
     disabled=False
 )
 w_changemap = widgets.RadioButtons(
-    options=['Bitemp', 'First', 'Last', 'Frequency', 'Plot', 'ATSF', 'S2'],
+    options=['Bitemp', 'First', 'Last', 'Frequency', 'Plot', 'ATSF', 'S2', 'NAIP'],
     value='First',
     layout = widgets.Layout(width='200px'),
     disabled=False
@@ -274,6 +273,14 @@ def handle_draw(self, action, geo_json):
         w_export_ass.disabled = True
         w_export_drv.disabled = True
 
+def rgbLayer(image):
+    ''' one percent linear stretch '''
+    rgbim = image.rename('r','g','b')
+    ps = rgbim.reduceRegion(ee.Reducer.percentile([1,99]),scale=10,maxPixels=1e10).getInfo()
+    mx = [ps['r_p99'],ps['g_p99'],ps['b_p99']]
+    mn = [ps['r_p1'],ps['g_p1'],ps['b_p1']]
+    return rgbim.visualize(min=mn,max=mx)
+
 def plot_bmap(image):
     ''' plot change fractions from bmap bands '''
     def plot_iter(current,prev):
@@ -382,9 +389,9 @@ def on_preview_button_clicked(b):
                 mx = 3
             elif w_changemap.value=='ATSF':
                 atsf_db = atsf.log10().multiply(10)
-                mp = ee.Image.rgb( atsf_db.select(1), atsf_db.select(0), atsf.select(1).divide(atsf.select(0)))               
+                mp = ee.Image.rgb( atsf_db.select(1), atsf_db.select(0), atsf.select(1).divide(atsf.select(0)))
                 mn = [-15, -15, 0]
-                mx = [ -2,   4, 1] 
+                mx = [ -2,   4, 1]
                 palette = None
                 print( 'ATSF' )
             elif w_changemap.value=='Plot':
@@ -396,6 +403,13 @@ def on_preview_button_clicked(b):
                 mp = ee.Image(image_s2)
                 mn = [500, 500, 500]
                 mx = [4000, 4000, 4000]
+                palette = None
+            elif w_changemap.value=='NAIP':
+                w_out.clear_output()
+                image_naip = collect_naip()
+                mp = ee.Image(image_naip)
+                mn = [0, 0, 0]
+                mx = [255, 255, 255]
                 palette = None
             if not w_quick.value:
                 mp = mp.reproject(crs=crs, scale=float(w_exportscale.value))
@@ -455,7 +469,7 @@ def on_review_button_clicked(b):
                 mn = 0
                 mx = w_maxfreq.value
                 print('Change frequency :\n blue = few, red = many')
-            elif w_changemap.value == 'Bitemporal':
+            elif w_changemap.value == 'Bitemp':
                 sel = int(w_interval.value)
                 sel = min(sel,count-1)            
                 sel = max(sel,1)
@@ -464,15 +478,23 @@ def on_review_button_clicked(b):
                 mp = bmap.select(sel-1)              
                 palette = rcy
                 mn = 0
-                mx = 3     
+                mx = 3
             elif w_changemap.value == 'ATSF':
+                atsf_db = atsf.log10().multiply(10)
+                mp = ee.Image.rgb(atsf_db.select(1), atsf_db.select(0), atsf.select(1).divide(atsf.select(0)))
+                mn = [-15, -15, 0]
+                mx = [-2, 4, 1]
+                palette = None
+                print('ATSF')
+            elif w_changemap.value == 'S2':
                 w_out.clear_output()
                 raise RuntimeError('Available only for Preview')
-            elif w_changemap.value == 'S2':
+            elif w_changemap.value == 'NAIP':
                 w_out.clear_output()
                 raise RuntimeError('Available only for Preview')
             elif w_changemap.value == 'Plot':
                 plot_bmap(asset)
+                return None
             if w_maskwater.value==True:
                 mp = mp.updateMask(watermask) 
             if w_dw.value:
@@ -560,6 +582,25 @@ def collect_s2():
             print('Error: %s' % e)
     return(image_s2)
 
+def collect_naip():
+    with w_out:
+        w_out.clear_output()
+        try:
+            print('NAIP Image (NIR,G,B) ...')
+            collectionid = 'USDA/NAIP/DOQQ'
+            rgb = ['N', 'G', 'B']
+            collection_naip = ee.ImageCollection(collectionid) \
+                .filterBounds(aoi) \
+                .filter(ee.Filter.date('2020-01-01', '2022-12-31'))
+            cnt = collection_naip.size().getInfo()
+            if cnt == 0:
+                raise ValueError('No NAIP images found')
+            image_naip = rgbLayer(collection_naip.mosaic().clip(aoi).select(rgb))
+        except Exception as e:
+            print('Error: %s' % e)
+    return(image_naip)
+
+
 def run():
     ''' Run the interface '''
     global m
@@ -567,24 +608,22 @@ def run():
     osm = basemap_to_tiles(basemaps.OpenStreetMap.Mapnik)
     ews = basemap_to_tiles(basemaps.Esri.WorldStreetMap)
     ewi = basemap_to_tiles(basemaps.Esri.WorldImagery)
-  
+
     dc = DrawControl(aoiline={},circlemarker={})
     dc.rectangle = {"shapeOptions": {"fillColor": "#0000ff","color": "#0000ff","fillOpacity": 0.05}}
     dc.polygon = {"shapeOptions": {"fillColor": "#0000ff","color": "#0000ff","fillOpacity": 0.05}}
-    
-    mc = MeasureControl(position='topright', primary_length_unit='kilometers')
 
     dc.on_draw(handle_draw)
     
     lc = LayersControl(position='topright')
     fs = FullScreenControl()
 
-    location = geolocator.geocode('Odessa')
+    location = geolocator.geocode('Houston')
     m = Map(center=(location.latitude, location.longitude),
                     zoom=11,
                     layout={'height': '500px', 'width': '800px'},
                     layers=(osm, ews, ewi),
-                    controls=(dc, mc, lc, fs))
+                    controls=(dc, lc, fs))
     with w_out:
         w_out.clear_output()
         print('Algorithm output')

@@ -5,9 +5,9 @@ FROM     debian:buster
 
 MAINTAINER Mort Canty "mort.canty@gmail.com"
 
-ENV     REFRESHED_AT 2023-08-18
+ENV     REFRESHED_AT 2023-11-18
  
-RUN apt-get update && apt-get upgrade
+RUN apt-get update # && apt-get upgrade
 
 RUN apt-get install -y \
     python3 \
@@ -30,21 +30,21 @@ RUN     pip3 install numpy
 RUN     pip3 install scipy
 RUN     pip3 install jupyter
 RUN     pip3 install ipyleaflet
-
 RUN     pip3 install -U cython
 RUN     pip3 install matplotlib==3.0.3
+
+ENV     REFRESHED_AT 2023-09-18
 
 EXPOSE 8888
 
 # setup for earthengine
 RUN     pip3 install earthengine-api --upgrade
 
-ENV     REFRESHED_AT 2022-08-28
 # install python modules 
-copy    setup.py  /home/setup.py
+COPY    setup.py  /home/setup.py
 ADD     eesar /home/eesar
 WORKDIR /home
-RUN     python3 setup.py install  
+RUN      pip3 install -e .
 
 #COPY    forest_cover.ipynb /home/forest_cover.ipynb
 COPY    interface.ipynb /home/interface.ipynb

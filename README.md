@@ -15,12 +15,8 @@ Point your browser to http\://localhost\:8888 to see the Jupyter notebook home p
 Open the Change Detection Notebook 
 
     interface.ipynb 
-    
-or Forest Mapping Notebook  
 
-	forest_cover.ipynb     
-    
-and run the first cell for authentication. This only has to be done once.    
+and run the first cell for authentication. This only has to be done once in a while.    
 
 Stop the container with
 
